@@ -1,0 +1,171 @@
+@import "tailwindcss";
+
+/* App-level defaults */
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-neutral-50 text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+}
+
+/* Animation utilities for Landing hero */
+@keyframes line-draw {
+  from { stroke-dasharray: 1 800; stroke-dashoffset: 0; }
+  to { stroke-dasharray: 800 0; stroke-dashoffset: 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes orbit {
+  0%   { transform: translate(120px, 220px); }
+  25%  { transform: translate(260px, 170px); }
+  50%  { transform: translate(420px, 220px); }
+  75%  { transform: translate(260px, 270px); }
+  100% { transform: translate(120px, 220px); }
+}
+
+.draw-line { stroke-dasharray: 800 0; animation: line-draw 1.2s ease forwards; }
+.animate-fade-in { animation: fade-in .8s ease forwards; }
+.animate-orbit { animation: orbit 2.8s ease-in-out infinite; }
+
+/* Architectural palette and utilities (ArcCa/Villa vibe) */
+:root {
+  --sand: #F3EFE7;       /* soft bone */
+  --stone: #E7E3DB;      /* light sand */
+  --charcoal: #0F1720;   /* deep charcoal */
+  --ink: #111315;        /* near-black */
+  --accent: #a588ef;     /* brand accent */
+  --metal: #9aa0a6;      /* aluminum */
+  --metal-dark: #656b73; /* darker aluminum */
+}
+
+.theme-architect {
+  background: var(--sand);
+  color: var(--ink);
+}
+
+.bg-architect-grid {
+  background-image:
+    radial-gradient(transparent 1px, var(--sand) 1px),
+    linear-gradient(to bottom right, rgba(17,19,21,0.04), rgba(165,136,239,0.04));
+  background-size: 22px 22px, 100% 100%;
+  background-position: -1px -1px, 0 0;
+}
+
+.glass-card {
+  backdrop-filter: saturate(120%) blur(10px);
+  background: rgba(255,255,255,0.55);
+}
+.glass-card-dark {
+  backdrop-filter: saturate(120%) blur(10px);
+  background: rgba(17,19,21,0.45);
+}
+
+.btn-accent {
+  background-image: linear-gradient(90deg, var(--accent), var(--accent));
+  color: white;
+}
+.btn-accent:hover { filter: brightness(1.05); }
+
+/* Dark concrete background texture */
+.texture-concrete-dark {
+  background-color: #0f1114;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.05) 0, transparent 100%),
+    radial-gradient(1px 1px at 70% 60%, rgba(255,255,255,0.04) 0, transparent 100%),
+    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.12));
+}
+
+/* Aluminum panel style */
+.texture-aluminum {
+  /* Darker glass effect: subtle dark overlay + soft highlight + aluminum base */
+  background-image:
+    linear-gradient(180deg, rgba(17,19,21,0.55), rgba(17,19,21,0.35)),
+    linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03)),
+    linear-gradient(135deg, var(--metal), var(--metal-dark));
+}
+
+/* Control dock styles */
+.control-dock {
+  backdrop-filter: blur(10px) saturate(120%);
+  background: rgba(17,19,21,0.55);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 10px 30px rgba(0,0,0,0.35);
+}
+.control-seg button {
+  color: #cbd5e1;
+}
+.control-seg button[aria-pressed="true"] {
+  color: #111315;
+  background: linear-gradient(180deg, var(--accent), var(--accent));
+  box-shadow: 0 1px 0 rgba(0,0,0,0.35) inset, 0 0 0 1px rgba(0,0,0,0.2) inset;
+}
+
+/* Metallic text styles */
+.metal-text {
+  --metal-grad: linear-gradient(180deg, #f3f4f6, #cdd2d7 40%, #9aa0a6 50%, #6b7280 60%, #e5e7eb);
+  background-image: var(--metal-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.metal-text-titanium {
+  --metal-grad: linear-gradient(180deg, #e6eef2, #b8c7d1 45%, #90a4ae 55%, #607d8b 65%, #dbe6ec);
+  background-image: var(--metal-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* Satin steel metallic text centered around #959595 */
+.metal-text-satin {
+  --metal-grad: linear-gradient(
+    180deg,
+    #e8e8e8 0%,
+    #cfcfcf 30%,
+    #959595 50%,
+    #7a7a7a 65%,
+    #ebebeb 100%
+  );
+  background-image: var(--metal-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* Shine that is clipped to the glyphs only */
+.metal-shine {
+  display: inline-block;
+  background-image: var(--metal-grad), linear-gradient(120deg, transparent 45%, rgba(255,255,255,0.65) 50%, transparent 55%);
+  background-size: 100% 100%, 300% 100%;
+  background-position: 0 0, -200% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shine-sweep 3.6s ease-in-out infinite;
+}
+@keyframes shine-sweep {
+  0% { background-position: 0 0, -200% 0; }
+  50% { background-position: 0 0, 200% 0; }
+  100% { background-position: 0 0, 200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .metal-shine { animation: none; }
+}
+
+/* Global placeholder visibility improvements */
+input::placeholder,
+textarea::placeholder {
+  color: rgba(255, 255, 255, 0.65); /* lighter for dark glass panels */
+  font-weight: 600; /* thicker */
+}
+/* Light theme fallback */
+@media (prefers-color-scheme: light) {
+  input::placeholder,
+  textarea::placeholder {
+    color: rgba(17, 19, 21, 0.45);
+    font-weight: 600;
+  }
+}
