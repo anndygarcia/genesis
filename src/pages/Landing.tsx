@@ -12,7 +12,6 @@ export default function Landing() {
           muted
           loop
           playsInline
-          controls
           preload="auto"
           poster="/vite.svg"
           onLoadedMetadata={(e) => {
@@ -38,8 +37,14 @@ export default function Landing() {
               readyState: el.readyState,
             })
           }}
-          onLoadedData={(e) => console.log('[BG-VIDEO] loadeddata, readyState=', e.currentTarget.readyState)}
-          onCanPlay={(e) => console.log('[BG-VIDEO] canplay, readyState=', e.currentTarget.readyState)}
+          onLoadedData={(e) => {
+            const v = e.currentTarget
+            console.log('[BG-VIDEO] loadeddata', { readyState: v.readyState, currentSrc: v.currentSrc })
+          }}
+          onCanPlay={(e) => {
+            const v = e.currentTarget
+            console.log('[BG-VIDEO] canplay', { readyState: v.readyState, currentSrc: v.currentSrc })
+          }}
           onCanPlayThrough={(e) => console.log('[BG-VIDEO] canplaythrough, readyState=', e.currentTarget.readyState)}
           onStalled={() => console.warn('[BG-VIDEO] stalled')}
           onWaiting={() => console.warn('[BG-VIDEO] waiting')}
@@ -53,10 +58,10 @@ export default function Landing() {
             console.log('[BG-VIDEO] progress buffered=', ranges.join(','))
           }}
         >
-          {/* Prefer MP4 first for widest browser support */}
-          <source src="/media/modern-home-video.mp4" type="video/mp4" />
-          {/* WebM fallback if supported by the browser */}
-          <source src="/media/modern-home-video.webm" type="video/webm" />
+          {/* Prefer WebM first (confirmed it plays in your Chrome); add cache-busting */}
+          <source src="/media/modern-home-video.webm?v=1" type="video/webm" />
+          {/* MP4 fallback */}
+          <source src="/media/modern-home-video.mp4?v=1" type="video/mp4" />
         </video>
         {/* darken for readability */}
         <div className="absolute inset-0 bg-black/50" />

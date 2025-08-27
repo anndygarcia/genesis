@@ -192,7 +192,7 @@ export default function IntakeForm() {
                   <div className="font-medium text-neutral-100">Reference photos (optional)</div>
                   <div className="text-sm text-neutral-400">Upload or drag-and-drop images of homes you like to guide the design.</div>
                 </div>
-                <label className="inline-flex items-center gap-2 rounded-md px-3 py-2 btn-accent cursor-pointer">
+                <label className="inline-flex items-center gap-2 rounded-md px-3 py-2 btn-accent cursor-pointer transform-gpu transition-transform duration-300 ease-out hover:scale-105 active:scale-100">
                   <input
                     type="file"
                     accept="image/*"
@@ -235,7 +235,7 @@ export default function IntakeForm() {
               placeholder="Must-haves, constraints, materials, outdoor spaces, etc."
               value={data.notes}
               onChange={e => setData(d => ({...d, notes:e.target.value}))}
-              className="min-h-40 rounded-md border border-white/10 px-3 py-2 bg-transparent text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-2 ring-[#a588ef]"
+              className="min-h-40 rounded-md border border-white/10 px-3 py-2 bg-transparent text-neutral-100 placeholder:text-white/85 placeholder:font-medium focus:outline-none focus:ring-2 ring-[#a588ef]"
             />
           </div>
         )}
@@ -247,7 +247,7 @@ export default function IntakeForm() {
             <ArrowLeft className="size-4" /> Back
           </button>
           <button onClick={next}
-            className="inline-flex items-center gap-2 rounded-md btn-accent px-4 py-2 text-white shadow"
+            className="inline-flex items-center gap-2 rounded-md btn-accent px-4 py-2 text-white shadow transform-gpu transition-transform duration-300 ease-out hover:scale-105 active:scale-100"
           >
             {stepIndex < STEPS.length - 1 ? (
               <>
@@ -306,7 +306,7 @@ function NumberField({ label, value, onChange, placeholder = '0', min = 0 }: { l
 
 function RadioCard({ label, value, checked, onChange }: { label:string, value:string, checked:boolean, onChange:()=>void }) {
   return (
-    <label className={`rounded-lg border border-white/10 p-4 cursor-pointer ${checked ? 'ring-2 ring-[#a588ef] border-[#a588ef]' : ''}`}>
+    <label className={`rounded-lg border border-white/10 p-4 cursor-pointer transform-gpu transition-transform transition-colors duration-300 ease-out hover:scale-105 hover:bg-[#a588ef]/16 hover:border-[#a588ef]/60 ${checked ? 'ring-2 ring-[#a588ef] border-[#a588ef]' : ''}`}>
       <input type="radio" name="style" value={value} checked={checked} onChange={onChange} className="sr-only" />
       <div className="font-medium text-neutral-100">{label}</div>
       <div className="text-sm text-neutral-400">{checked ? 'Selected' : 'Choose'}</div>

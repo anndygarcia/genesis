@@ -17,6 +17,12 @@ function ProfileSettings() {
   const [category, setCategory] = useState('')
   const [specialization, setSpecialization] = useState('')
   const [location, setLocation] = useState('')
+  // Socials
+  const [instagramUrl, setInstagramUrl] = useState('')
+  const [facebookUrl, setFacebookUrl] = useState('')
+  const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [linkedinUrl, setLinkedinUrl] = useState('')
+  const [tiktokUrl, setTiktokUrl] = useState('')
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const avatarPreview = useMemo(() => {
@@ -46,6 +52,12 @@ function ProfileSettings() {
         setCategory(meta.category || '')
         setSpecialization(meta.specialization || '')
         setLocation(meta.location || '')
+        // Socials (support *_url fallbacks)
+        setInstagramUrl(meta.instagram || meta.instagram_url || '')
+        setFacebookUrl(meta.facebook || meta.facebook_url || '')
+        setYoutubeUrl(meta.youtube || meta.youtube_url || '')
+        setLinkedinUrl(meta.linkedin || meta.linkedin_url || '')
+        setTiktokUrl(meta.tiktok || meta.tiktok_url || '')
       } catch (e: any) {
         setError(e?.message || 'Failed to load profile')
       } finally {
@@ -70,6 +82,11 @@ function ProfileSettings() {
       setCategory(meta.category || '')
       setSpecialization(meta.specialization || '')
       setLocation(meta.location || '')
+      setInstagramUrl(meta.instagram || meta.instagram_url || '')
+      setFacebookUrl(meta.facebook || meta.facebook_url || '')
+      setYoutubeUrl(meta.youtube || meta.youtube_url || '')
+      setLinkedinUrl(meta.linkedin || meta.linkedin_url || '')
+      setTiktokUrl(meta.tiktok || meta.tiktok_url || '')
       setNotice('Loaded latest profile from server')
     } catch (e: any) {
       setError(e?.message || 'Failed to refresh profile')
@@ -120,6 +137,12 @@ function ProfileSettings() {
           category,
           specialization,
           location,
+          // Socials
+          instagram: instagramUrl,
+          facebook: facebookUrl,
+          youtube: youtubeUrl,
+          linkedin: linkedinUrl,
+          tiktok: tiktokUrl,
         },
       })
       if (updErr) throw updErr
@@ -141,6 +164,11 @@ function ProfileSettings() {
           setCategory(meta.category ?? category)
           setSpecialization(meta.specialization ?? specialization)
           setLocation(meta.location ?? location)
+          setInstagramUrl(meta.instagram ?? instagramUrl)
+          setFacebookUrl(meta.facebook ?? facebookUrl)
+          setYoutubeUrl(meta.youtube ?? youtubeUrl)
+          setLinkedinUrl(meta.linkedin ?? linkedinUrl)
+          setTiktokUrl(meta.tiktok ?? tiktokUrl)
         }
       } catch {}
     } catch (e: any) {
@@ -273,6 +301,64 @@ function ProfileSettings() {
                 placeholder="City, State / Country"
                 className="mt-1 w-full rounded-md bg-neutral-800 border border-white/10 px-3 py-2 text-white placeholder:text-white/60 outline-none focus:ring-2 focus:ring-[#a588ef]"
               />
+            </div>
+
+            {/* Socials section */}
+            <div className="pt-2">
+              <h3 className="text-sm font-medium text-white">Socials</h3>
+              <p className="text-xs text-neutral-400 mt-0.5">Add links to your profiles. These appear on your public profile.</p>
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-neutral-300">Instagram URL</label>
+                  <input
+                    value={instagramUrl}
+                    onChange={(e) => setInstagramUrl(e.target.value)}
+                    placeholder="https://instagram.com/your-handle"
+                    inputMode="url"
+                    className="mt-1 w-full rounded-md bg-neutral-800 border border-white/10 px-3 py-2 text-white placeholder:text-white/60 outline-none focus:ring-2 focus:ring-[#a588ef]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-neutral-300">Facebook URL</label>
+                  <input
+                    value={facebookUrl}
+                    onChange={(e) => setFacebookUrl(e.target.value)}
+                    placeholder="https://facebook.com/your-page"
+                    inputMode="url"
+                    className="mt-1 w-full rounded-md bg-neutral-800 border border-white/10 px-3 py-2 text-white placeholder:text-white/60 outline-none focus:ring-2 focus:ring-[#a588ef]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-neutral-300">YouTube URL</label>
+                  <input
+                    value={youtubeUrl}
+                    onChange={(e) => setYoutubeUrl(e.target.value)}
+                    placeholder="https://youtube.com/@your-channel"
+                    inputMode="url"
+                    className="mt-1 w-full rounded-md bg-neutral-800 border border-white/10 px-3 py-2 text-white placeholder:text-white/60 outline-none focus:ring-2 focus:ring-[#a588ef]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-neutral-300">LinkedIn URL</label>
+                  <input
+                    value={linkedinUrl}
+                    onChange={(e) => setLinkedinUrl(e.target.value)}
+                    placeholder="https://linkedin.com/in/your-profile"
+                    inputMode="url"
+                    className="mt-1 w-full rounded-md bg-neutral-800 border border-white/10 px-3 py-2 text-white placeholder:text-white/60 outline-none focus:ring-2 focus:ring-[#a588ef]"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm text-neutral-300">TikTok URL</label>
+                  <input
+                    value={tiktokUrl}
+                    onChange={(e) => setTiktokUrl(e.target.value)}
+                    placeholder="https://www.tiktok.com/@your-handle"
+                    inputMode="url"
+                    className="mt-1 w-full rounded-md bg-neutral-800 border border-white/10 px-3 py-2 text-white placeholder:text-white/60 outline-none focus:ring-2 focus:ring-[#a588ef]"
+                  />
+                </div>
+              </div>
             </div>
 
             {error && <p className="text-sm text-red-400">{error}</p>}

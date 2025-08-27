@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { Plus, Instagram, Facebook, Youtube, Linkedin, Music2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 function Profile() {
@@ -16,6 +17,11 @@ function Profile() {
   const [location, setLocation] = useState('')
   const [category, setCategory] = useState('')
   const [specialization, setSpecialization] = useState('')
+  const [instagramUrl, setInstagramUrl] = useState('')
+  const [facebookUrl, setFacebookUrl] = useState('')
+  const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [linkedinUrl, setLinkedinUrl] = useState('')
+  const [tiktokUrl, setTiktokUrl] = useState('')
 
   const avatarPreview = useMemo(() => avatarUrl || '', [avatarUrl])
 
@@ -41,6 +47,11 @@ function Profile() {
         setLocation(meta.location || '')
         setCategory(meta.category || '')
         setSpecialization(meta.specialization || '')
+        setInstagramUrl(meta.instagram || meta.instagram_url || '')
+        setFacebookUrl(meta.facebook || meta.facebook_url || '')
+        setYoutubeUrl(meta.youtube || meta.youtube_url || '')
+        setLinkedinUrl(meta.linkedin || meta.linkedin_url || '')
+        setTiktokUrl(meta.tiktok || meta.tiktok_url || '')
       } catch (e: any) {
         setError(e?.message || 'Failed to load profile')
       } finally {
@@ -95,6 +106,118 @@ function Profile() {
                 Edit Profile
               </NavLink>
             )}
+            {/* Social icons (always visible). If URL missing, link to settings */}
+            <div className="ml-1 flex items-center gap-2">
+              {instagramUrl ? (
+                <a
+                  href={instagramUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Instagram"
+                  className="p-1 rounded-md text-neutral-300 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef] transform-gpu transition duration-200 ease-out hover:scale-110"
+                  title="Instagram"
+                >
+                  <Instagram className="h-5 w-5" />
+                </a>
+              ) : (
+                <NavLink
+                  to="/profile/settings"
+                  aria-label="Add Instagram"
+                  className="p-1 rounded-md text-neutral-500 hover:text-neutral-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef]"
+                  title="Add Instagram"
+                >
+                  <Instagram className="h-5 w-5" />
+                </NavLink>
+              )}
+
+              {facebookUrl ? (
+                <a
+                  href={facebookUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Facebook"
+                  className="p-1 rounded-md text-neutral-300 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef] transform-gpu transition duration-200 ease-out hover:scale-110"
+                  title="Facebook"
+                >
+                  <Facebook className="h-5 w-5" />
+                </a>
+              ) : (
+                <NavLink
+                  to="/profile/settings"
+                  aria-label="Add Facebook"
+                  className="p-1 rounded-md text-neutral-500 hover:text-neutral-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef]"
+                  title="Add Facebook"
+                >
+                  <Facebook className="h-5 w-5" />
+                </NavLink>
+              )}
+
+              {youtubeUrl ? (
+                <a
+                  href={youtubeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="YouTube"
+                  className="p-1 rounded-md text-neutral-300 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef] transform-gpu transition duration-200 ease-out hover:scale-110"
+                  title="YouTube"
+                >
+                  <Youtube className="h-5 w-5" />
+                </a>
+              ) : (
+                <NavLink
+                  to="/profile/settings"
+                  aria-label="Add YouTube"
+                  className="p-1 rounded-md text-neutral-500 hover:text-neutral-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef]"
+                  title="Add YouTube"
+                >
+                  <Youtube className="h-5 w-5" />
+                </NavLink>
+              )}
+
+              {linkedinUrl ? (
+                <a
+                  href={linkedinUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="LinkedIn"
+                  className="p-1 rounded-md text-neutral-300 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef] transform-gpu transition duration-200 ease-out hover:scale-110"
+                  title="LinkedIn"
+                >
+                  <Linkedin className="h-5 w-5" />
+                </a>
+              ) : (
+                <NavLink
+                  to="/profile/settings"
+                  aria-label="Add LinkedIn"
+                  className="p-1 rounded-md text-neutral-500 hover:text-neutral-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef]"
+                  title="Add LinkedIn"
+                >
+                  <Linkedin className="h-5 w-5" />
+                </NavLink>
+              )}
+
+              {tiktokUrl ? (
+                <a
+                  href={tiktokUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="TikTok"
+                  className="p-1 rounded-md text-neutral-300 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef] transform-gpu transition duration-200 ease-out hover:scale-110"
+                  title="TikTok"
+                >
+                  <Music2 className="h-5 w-5" />
+                </a>
+              ) : (
+                <NavLink
+                  to="/profile/settings"
+                  aria-label="Add TikTok"
+                  className="p-1 rounded-md text-neutral-500 hover:text-neutral-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef]"
+                  title="Add TikTok"
+                >
+                  <Music2 className="h-5 w-5" />
+                </NavLink>
+              )}
+            </div>
           </div>
           {bio && (
             <p className="mt-2 text-sm text-neutral-300 max-w-2xl whitespace-pre-wrap text-left">{bio}</p>
@@ -129,9 +252,19 @@ function Profile() {
         <h2 className="text-lg font-medium text-white mb-3">Projects</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="aspect-square rounded-xl border border-white/10 bg-neutral-900/60 grid place-items-center text-neutral-500">
-              Coming soon
-            </div>
+            <NavLink
+              key={i}
+              to="/projects/new"
+              aria-label="Create new project"
+              className="group relative aspect-square rounded-xl border border-white/10 bg-neutral-900/60 text-neutral-500 transform-gpu transition-transform duration-300 ease-out hover:scale-105 overflow-hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef]"
+            >
+              <span className="absolute inset-0 grid place-items-center transition-opacity duration-300 ease-out group-hover:opacity-0">
+                Coming soon
+              </span>
+              <span className="absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100">
+                <Plus className="h-10 w-10 text-neutral-300" />
+              </span>
+            </NavLink>
           ))}
         </div>
         {!userId && (

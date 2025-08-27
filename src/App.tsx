@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import MetalInteractiveInline from './components/MetalInteractiveInline'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
@@ -12,6 +13,7 @@ import Profile from './pages/Profile'
 import ProfileSettings from './pages/ProfileSettings'
 import Projects from './pages/Projects'
 import Settings from './pages/Settings'
+import ProjectUpload from './pages/ProjectUpload'
 
 function App() {
   const navigate = useNavigate()
@@ -21,6 +23,10 @@ function App() {
     localStorage.setItem('theme', 'dark')
   }, [])
   const [authOpen, setAuthOpen] = useState(false)
+  // Smooth modal mount/unmount with exit animation
+  const [authVisible, setAuthVisible] = useState(false)
+  const [authClosing, setAuthClosing] = useState(false)
+  const closeTimer = useRef<number | null>(null)
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn')
   const [user, setUser] = useState<User | null>(null)
   const [showPassword, setShowPassword] = useState(false)
@@ -97,6 +103,119 @@ function App() {
     }
   }, [])
 
+  // Drive visible/closing state from authOpen for seamless animations
+  useEffect(() => {
+    if (authOpen) {
+      // open -> ensure mounted and reset closing
+      if (closeTimer.current) {
+        clearTimeout(closeTimer.current)
+        closeTimer.current = null
+      }
+      setAuthVisible(true)
+      setAuthClosing(false)
+    } else if (authVisible && !authClosing) {
+      // start closing animation
+      setAuthClosing(true)
+      // unmount after the longest exit animation duration (ms)
+      closeTimer.current = window.setTimeout(() => {
+        setAuthVisible(false)
+        setAuthClosing(false)
+        closeTimer.current = null
+      }, 360)
+    }
+  }, [authOpen, authVisible, authClosing])
+
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current) }, [])
+
+  // Interactive metal panel
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const rafId = useRef<number | null>(null)
+  // Smoothed state for interactive sheen/tilt to avoid micro-jitter
+  const lastVars = useRef({ mx: 0.5, my: 0.5, ang: 0, rx: 0, ry: 0, shine: 0.18 })
+
+  // Cleanup rAF on unmount
+  useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current) }, [])
+
+  const handlePanelLeave = () => {
+    const el = panelRef.current
+    if (!el) return
+    // Reset to neutral
+    el.style.setProperty('--mx', '50%')
+    el.style.setProperty('--my', '50%')
+    // Center-relative offsets for 300% canvas (range [-size .. +size])
+    el.style.setProperty('--dx', `0px`)
+    el.style.setProperty('--dy', `0px`)
+    el.style.setProperty('--rx', '0deg')
+    el.style.setProperty('--ry', '0deg')
+    el.style.setProperty('--elev', '0px')
+    el.style.setProperty('--ang', '0deg')
+    el.style.setProperty('--shine', '0.18')
+    lastVars.current = { mx: 0.5, my: 0.5, ang: 0, rx: 0, ry: 0, shine: 0.18 }
+  }
+
+  const handlePanelMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = panelRef.current
+    if (!el) return
+    const { left, top, width, height } = el.getBoundingClientRect()
+    const x = Math.min(Math.max(e.clientX - left, 0), width)
+    const y = Math.min(Math.max(e.clientY - top, 0), height)
+    const px = x / width
+    const py = y / height
+    // Target values
+    const ry = (px - 0.5) * 8 // tilt Y
+    const rx = -(py - 0.5) * 8 // tilt X
+    // Sheen angle tracks both horizontal and vertical tilt to feel continuous in all directions
+    // while staying near-vertical to avoid harsh flips.
+    const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
+    const angDeg = 90 + clamp(ry * 1.8 + rx * 1.4, -26, 26)
+    // Smooth edge bias: draw sheen toward nearest horizontal edge, keep vertical following cursor
+    let bias = Math.min(1, Math.abs(px - 0.5) * 2) // 0 center -> 1 edges
+    // Ease bias to avoid sudden edge snapping
+    bias = Math.pow(bias, 0.6)
+    const edgeTargetX = px < 0.5 ? 0.04 : 0.96 // keep inside rounded borders
+    const mx = (1 - 0.5 * bias) * px + (0.5 * bias) * edgeTargetX
+    const my = clamp(py, 0.06, 0.94)
+    // Intensity scales with distance from center (edges brighter)
+    const dx = px - 0.5
+    const dy = py - 0.5
+    const dist = Math.hypot(dx, dy) / Math.SQRT1_2 // normalize by ~0.7071
+    const shine = Math.max(0.24, Math.min(0.56, 0.24 + 0.34 * dist))
+    // rAF to avoid flooding style writes
+    if (rafId.current) cancelAnimationFrame(rafId.current)
+    rafId.current = requestAnimationFrame(() => {
+      // Lerp smoothing to reduce micro-jitter
+      const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+      // Smooth angle across wrap-around using shortest path
+      const currentAng = lastVars.current.ang
+      let targetAng = angDeg
+      let delta = targetAng - currentAng
+      if (delta > 180) delta -= 360
+      if (delta < -180) delta += 360
+      const smAng = currentAng + delta * 0.12
+      const smMx = lerp(lastVars.current.mx, mx, 0.16)
+      const smMy = lerp(lastVars.current.my, my, 0.16)
+      const smRx = lerp(lastVars.current.rx, rx, 0.18)
+      const smRy = lerp(lastVars.current.ry, ry, 0.18)
+      const smShine = lerp(lastVars.current.shine, shine, 0.12)
+      lastVars.current = { mx: smMx, my: smMy, ang: smAng, rx: smRx, ry: smRy, shine: smShine }
+      // Keep percentage vars updated (if used elsewhere)
+      el.style.setProperty('--mx', `${(smMx * 100).toFixed(3)}%`)
+      el.style.setProperty('--my', `${(smMy * 100).toFixed(3)}%`)
+      // Center-relative pixel offsets for background-position calc(50% + var(--dx/--dy)).
+      // With background-size: 300%, moving by [-size .. +size] pans the full canvas.
+      const dx = (smMx - 0.5) * 2 * width
+      // Reduce vertical panning to avoid a dead zone at the very top
+      const dy = (smMy - 0.5) * 1.6 * height
+      el.style.setProperty('--dx', `${dx.toFixed(3)}px`)
+      el.style.setProperty('--dy', `${dy.toFixed(3)}px`)
+      el.style.setProperty('--rx', `${smRx.toFixed(2)}deg`)
+      el.style.setProperty('--ry', `${smRy.toFixed(2)}deg`)
+      el.style.setProperty('--ang', `${smAng.toFixed(2)}deg`)
+      el.style.setProperty('--shine', smShine.toFixed(3))
+      el.style.setProperty('--elev', '8px')
+    })
+  }
+
   return (
     <div className="min-h-full flex flex-col texture-concrete-dark">
       <header className="border-b border-white/10 bg-neutral-950/60 backdrop-blur-xl sticky top-0 z-10">
@@ -107,18 +226,22 @@ function App() {
             aria-label="Genesis AI Home"
             className="absolute left-1/2 -translate-x-1/2 hidden sm:block select-none"
           >
-            <span className="metal-text-satin metal-shine text-lg md:text-2xl font-extrabold tracking-[0.35em] drop-shadow-[0_1px_6px_rgba(165,136,239,0.25)]">
-              GENESIS AI
-            </span>
+            <MetalInteractiveInline mode="text">
+              <span className="metal-text-satin metal-shine text-lg md:text-2xl font-extrabold tracking-[0.35em] drop-shadow-[0_1px_6px_rgba(165,136,239,0.25)]">
+                GENESIS AI
+              </span>
+            </MetalInteractiveInline>
           </NavLink>
           <NavLink to="/" className="text-xl font-semibold tracking-tight">
             <span className="sr-only">Genesis AI</span>
-            <img
-              src="/media/genesis-logo.png"
-              alt="Genesis AI logo"
-              className="h-12 w-12 sm:h-16 sm:w-16 select-none"
-              draggable={false}
-            />
+            <MetalInteractiveInline mode="image" maskSrc="/media/genesis-logo.png" className="spin-on-hover">
+              <img
+                src="/media/genesis-logo.png"
+                alt="Genesis AI logo"
+                className="h-12 w-12 sm:h-16 sm:w-16 select-none"
+                draggable={false}
+              />
+            </MetalInteractiveInline>
           </NavLink>
           <nav className="flex items-center gap-6 text-sm">
             <NavLink to="/" className={({isActive}) => `hover:text-[#a588ef] ${isActive ? 'text-[#a588ef]' : 'text-neutral-200'}`}>Home</NavLink>
@@ -135,7 +258,7 @@ function App() {
                   setMenuOpen(true)
                 }}
                 onMouseLeave={() => {
-                  // small delay so moving cursor from button to menu doesn't immediately close it
+                  // small delay so moving cursor from trigger to menu doesn't immediately close it
                   hoverCloseTimeout.current = window.setTimeout(() => {
                     setMenuOpen(false)
                     hoverCloseTimeout.current = null
@@ -171,9 +294,27 @@ function App() {
                       >
                         <div className="h-10 w-10 rounded-full bg-neutral-800 border border-white/10 overflow-hidden grid place-items-center">
                           {avatarUrl ? (
-                            <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                            <img
+                              src={avatarUrl}
+                              alt={displayName}
+                              className="h-full w-full object-cover cursor-pointer"
+                              title="Go to profile"
+                              onClick={(e) => { e.stopPropagation(); navigate('/profile') }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); navigate('/profile') } }}
+                              role="link"
+                              tabIndex={0}
+                            />
                           ) : (
-                            <span className="text-sm text-neutral-300">{initials}</span>
+                            <span
+                              className="text-sm text-neutral-300 cursor-pointer"
+                              title="Go to profile"
+                              onClick={(e) => { e.stopPropagation(); navigate('/profile') }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); navigate('/profile') } }}
+                              role="link"
+                              tabIndex={0}
+                            >
+                              {initials}
+                            </span>
                           )}
                         </div>
                         <span className="text-xs text-neutral-300 max-w-[7rem] truncate">{displayName}</span>
@@ -257,7 +398,7 @@ function App() {
               <button
                 type="button"
                 onClick={() => { setMode('signIn'); setAuthOpen(true) }}
-                className="text-neutral-200 hover:text-[#a588ef]"
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/10 bg-neutral-900/60 text-neutral-200 hover:text-white hover:bg-neutral-800/70 transform-gpu transition-colors transition-transform duration-350 ease-out hover:scale-110 active:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef] shadow-sm"
               >
                 Log In
               </button>
@@ -274,12 +415,13 @@ function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/settings" element={<ProfileSettings />} />
           <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/new" element={<ProjectUpload />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
 
       {/* Auth Modal */}
-      {authOpen && (
+      {authVisible && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
           aria-modal="true"
@@ -287,20 +429,29 @@ function App() {
         >
           {/* overlay */}
           <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            className={`absolute inset-0 bg-black/70 backdrop-blur-sm ${authClosing ? 'animate-veil-opacity-out-slow' : 'animate-veil-opacity-slow'}`}
             onClick={() => setAuthOpen(false)}
           />
           {/* panel */}
-          <div className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-neutral-900 p-6 shadow-2xl">
+          <div
+            ref={panelRef}
+            onMouseMove={handlePanelMove}
+            onMouseLeave={handlePanelLeave}
+            className={`relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-neutral-900 p-6 shadow-2xl metal-glow metal-brushed metal-cut metal-interactive will-change-transform ${authClosing ? 'animate-ghost-pop-out-smooth' : 'animate-ghost-pop-smooth'}`}
+          >
+            {/* ethereal sweep */}
+            <div className="metal-wisp-wide rounded-2xl" aria-hidden />
             <div className="mb-5 text-center">
               <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight flex items-center justify-center">
                 <span className="sr-only">Genesis AI</span>
-                <img
-                  src="/media/genesis-logo.png"
-                  alt="Genesis AI logo"
-                  className="h-24 w-24 sm:h-28 sm:w-28 select-none"
-                  draggable={false}
-                />
+                <MetalInteractiveInline mode="image" maskSrc="/media/genesis-logo.png" className="spin-on-hover">
+                  <img
+                    src="/media/genesis-logo.png"
+                    alt="Genesis AI logo"
+                    className="h-24 w-24 sm:h-28 sm:w-28 select-none"
+                    draggable={false}
+                  />
+                </MetalInteractiveInline>
               </h2>
               <p className="mt-1 text-xs text-neutral-400">
                 {mode === 'signIn' ? 'Sign In' : 'Create an account'}

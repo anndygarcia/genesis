@@ -1,12 +1,103 @@
 @import "tailwindcss";
 
+/* Inline interactive metal target (logos/text) */
+.metal-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transform: translateZ(0);
+  will-change: transform, filter;
+  transition: transform 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Text-only mode: clip sheen to glyphs; remove box overlays */
+.metal-interactive.text-only::before,
+.metal-interactive.text-only::after {
+  display: none;
+}
+.metal-interactive.text-only > * {
+  position: relative;
+  /* keep existing metal text gradient as base via --metal-grad if present */
+  background-image:
+    var(--metal-grad, linear-gradient(180deg, #e8e8e8, #cfcfcf 30%, #959595 50%, #7a7a7a 65%, #ebebeb 100%)),
+    linear-gradient(
+      var(--ang),
+      rgba(255,255,255,0) 12%,
+      rgba(255,255,255,0.04) 34%,
+      rgba(255,255,255,0.18) 50%,
+      rgba(255,255,255,0.04) 66%,
+      rgba(255,255,255,0) 88%
+    );
+  background-size: 100% 100%, 220% 220%;
+  background-position: 0 0, calc(50% + var(--dx, 0px)) calc(50% + var(--dy, 0px));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Icon/image mask mode: use provided mask URL (alpha) to clip overlays */
+.metal-interactive.icon-mask::before,
+.metal-interactive.icon-mask::after {
+  -webkit-mask-image: var(--mask-url);
+  mask-image: var(--mask-url);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.metal-inline:hover {
+  transform: scale(1.06) translateZ(0);
+}
+
+/* Larger hover scale for symbol logos */
+.metal-inline.icon-mask { --hover-scale: 1.06; }
+.metal-inline.icon-mask:hover { transform: scale(var(--hover-scale, 1.06)) translateZ(0); }
+
+/* Spin animations */
+@keyframes logo-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes logo-spin-scale {
+  from { transform: scale(var(--hover-scale, 1.06)) translateZ(0) rotate(0deg); }
+  to { transform: scale(var(--hover-scale, 1.06)) translateZ(0) rotate(360deg); }
+}
+/* Apply a single tasteful spin when hovered on elements that opt-in */
+.metal-inline.icon-mask.spin-on-hover:hover { animation: logo-spin-scale 2000ms cubic-bezier(0.22, 1, 0.36, 1) 1 both; }
+/* Continuous spinner utility for loading screens */
+.logo-spinner { animation: logo-spin 2300ms linear infinite; }
+
+/* Soften icon sheen while masked to the logo shape */
+.metal-interactive.icon-mask::after { opacity: 0.46; filter: blur(0.5px); }
+.metal-interactive.icon-mask:hover::after { opacity: 0.55; }
+
+
+
 /* App-level defaults */
 html, body, #root {
   height: 100%;
 }
 
+/* Disable vignette wisps */
+.metal-wisp, .metal-wisp-wide { display: none; }
+
 body {
-  @apply bg-neutral-50 text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+  /* Replaced Tailwind @apply with equivalent CSS to avoid editor warning */
+  background-color: #fafafa; /* neutral-50 */
+  color: #171717; /* neutral-900 */
+  -webkit-font-smoothing: antialiased; /* antialiased */
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #0a0a0a; /* neutral-950 */
+    color: #f5f5f5; /* neutral-100 */
+  }
 }
 
 /* Animation utilities for Landing hero */
@@ -155,6 +246,146 @@ body {
   .metal-shine { animation: none; }
 }
 
+/* Ghost modal appearance */
+@keyframes veil-fade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes ghost-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+    filter: blur(6px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.015);
+    filter: blur(1.5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+.animate-veil-fade { animation: veil-fade 180ms ease-out forwards; }
+.animate-ghost-pop { animation: ghost-pop 220ms cubic-bezier(.2,.9,.15,1) forwards; }
+
+/* Performance-friendly overlay fades (opacity only) */
+@keyframes veil-opacity-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes veil-opacity-out {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.animate-veil-opacity-slow { animation: veil-opacity-in 320ms ease-out forwards; }
+.animate-veil-opacity-out-slow { animation: veil-opacity-out 260ms ease-in forwards; }
+
+/* Exit animations to match smooth entrance */
+@keyframes ghost-pop-out-smooth {
+  0%   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  40%  { opacity: .9; transform: translateY(1px) scale(0.998); filter: blur(.5px); }
+  100% { opacity: 0; transform: translateY(6px) scale(0.975); filter: blur(4px); }
+}
+.animate-ghost-pop-out-smooth { animation: ghost-pop-out-smooth 300ms cubic-bezier(.22,.72,.18,1) forwards; }
+
+/* Rendering hint to avoid paint jank */
+.will-change-transform { will-change: transform, opacity; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-veil-fade, .animate-ghost-pop, .animate-veil-opacity-slow, .animate-veil-opacity-out-slow, .animate-ghost-pop-out-smooth { animation: none; }
+}
+
+/* Subtle spectral edge glow */
+.ghost-glow { box-shadow: 0 0 0 1px rgba(165,136,239,0.15) inset, 0 10px 40px rgba(165,136,239,0.12); }
+
+/* Smooth/relaxing modal appearances */
+@keyframes veil-fade-slow {
+  0% { opacity: 0; backdrop-filter: blur(0px); }
+  100% { opacity: 1; backdrop-filter: blur(3px); }
+}
+@keyframes ghost-pop-smooth {
+  0%   { opacity: 0; transform: translateY(10px) scale(0.965); filter: blur(6px); }
+  50%  { opacity: 1; transform: translateY(-1px) scale(1.01); filter: blur(1.5px); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+.animate-veil-fade-slow { animation: veil-fade-slow 320ms cubic-bezier(.16,.84,.26,1) forwards; }
+.animate-ghost-pop-smooth { animation: ghost-pop-smooth 360ms cubic-bezier(.16,.84,.26,1) forwards; }
+.ghost-glow-soft { box-shadow: 0 0 0 1px rgba(165,136,239,0.12) inset, 0 20px 60px rgba(165,136,239,0.10), 0 10px 40px rgba(0,0,0,0.45); }
+
+/* Ethereal wisp sweep on open */
+@keyframes wisp-sweep {
+  0% { opacity: 0; transform: translateX(-40%) skewX(-8deg); }
+  20% { opacity: .8; }
+  100% { opacity: 0; transform: translateX(120%) skewX(-8deg); }
+}
+.ghost-wisp {
+  position: absolute;
+  inset: -2px; /* bleed slightly over border radius */
+  border-radius: inherit;
+  pointer-events: none;
+  overflow: hidden;
+}
+.ghost-wisp::after {
+  content: "";
+  position: absolute;
+  top: -20%;
+  left: -30%;
+  width: 60%;
+  height: 140%;
+  background: radial-gradient(120px 220px at center, rgba(165,136,239,0.35), rgba(165,136,239,0.12) 40%, transparent 60%);
+  filter: blur(12px);
+  animation: wisp-sweep 650ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-veil-fade-slow, .animate-ghost-pop-smooth { animation: none; }
+  .ghost-wisp::after { display: none; }
+}
+
+/* Input color hardening (dark glass panels) */
+/* Ensure inputs on dark backgrounds always render white text and caret */
+input.bg-neutral-800,
+input.bg-neutral-900,
+.input-dark {
+  color: #ffffff !important;
+  caret-color: #ffffff;
+  color-scheme: dark; /* hint to the browser for built-in UI */
+}
+
+/* Placeholders on dark inputs */
+input.bg-neutral-800::placeholder,
+input.bg-neutral-900::placeholder,
+.input-dark::placeholder {
+  color: rgba(255,255,255,0.70) !important;
+  opacity: 1; /* Firefox */
+}
+
+/* Autofill text color (Chrome/Safari) */
+input.bg-neutral-800:-webkit-autofill,
+input.bg-neutral-800:-webkit-autofill:hover,
+input.bg-neutral-800:-webkit-autofill:focus,
+input.bg-neutral-900:-webkit-autofill,
+input.bg-neutral-900:-webkit-autofill:hover,
+input.bg-neutral-900:-webkit-autofill:focus,
+.input-dark:-webkit-autofill,
+.input-dark:-webkit-autofill:hover,
+.input-dark:-webkit-autofill:focus {
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff;
+  transition: background-color 9999s ease-out 0s; /* avoid yellow flash */
+}
+
+/* Password dots visibility on dark background */
+input[type="password"].bg-neutral-800,
+input[type="password"].bg-neutral-900,
+input[type="password"].input-dark {
+  /* 'text-security' is nonstandard; keep WebKit variant which works in Safari/Chromium */
+  -webkit-text-security: disc; /* WebKit */
+}
+
 /* Global placeholder visibility improvements */
 input::placeholder,
 textarea::placeholder {
@@ -168,4 +399,202 @@ textarea::placeholder {
     color: rgba(17, 19, 21, 0.45);
     font-weight: 600;
   }
+}
+
+/* Metallic rough-cut panel aesthetics */
+.metal-glow {
+  /* colder, metallic edge and base glow */
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06) inset,
+    0 12px 36px rgba(0,0,0,0.45),
+    0 20px 60px rgba(0,0,0,0.35);
+}
+
+/* brushed micro-texture overlay (subtle) */
+.metal-brushed {
+  position: relative;
+  overflow: hidden;
+}
+.metal-brushed::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0.35;
+  background-image:
+    /* fine vertical grain */
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px),
+    /* broad diagonal burnish */
+    linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02) 35%, rgba(0,0,0,0.12) 60%, rgba(255,255,255,0.06) 95%);
+  mix-blend-mode: overlay;
+}
+
+/* rough-cut edge highlight (subtle irregular contour) */
+.metal-cut {
+  position: relative;
+}
+.metal-cut::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* create a chiseled rim with inner shadow + masked segments */
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.10), inset 0 0 24px rgba(255,255,255,0.06);
+  -webkit-mask:
+    radial-gradient(120% 120% at 10% 0%, #000 55%, transparent 60%) top left / 50% 50% no-repeat,
+    radial-gradient(120% 120% at 90% 0%, #000 55%, transparent 60%) top right / 50% 50% no-repeat,
+    radial-gradient(120% 120% at 0% 100%, #000 55%, transparent 60%) bottom left / 50% 50% no-repeat,
+    radial-gradient(120% 120% at 100% 100%, #000 55%, transparent 60%) bottom right / 50% 50% no-repeat,
+    linear-gradient(#000, #000);
+          mask:
+    radial-gradient(120% 120% at 10% 0%, #000 55%, transparent 60%) top left / 50% 50% no-repeat,
+    radial-gradient(120% 120% at 90% 0%, #000 55%, transparent 60%) top right / 50% 50% no-repeat,
+    radial-gradient(120% 120% at 0% 100%, #000 55%, transparent 60%) bottom left / 50% 50% no-repeat,
+    radial-gradient(120% 120% at 100% 100%, #000 55%, transparent 60%) bottom right / 50% 50% no-repeat,
+    linear-gradient(#000, #000);
+}
+
+/* metallic shimmer sweep (replaces purple wisp) */
+@keyframes metal-sheen-sweep {
+  0% { opacity: 0; transform: translateX(-50%) skewX(-8deg); }
+  20% { opacity: .75; }
+  100% { opacity: 0; transform: translateX(130%) skewX(-8deg); }
+}
+.metal-wisp {
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+  overflow: hidden;
+}
+.metal-wisp::after {
+  content: "";
+  position: absolute;
+  top: -25%;
+  left: -35%;
+  width: 70%;
+  height: 155%;
+  /* softer, broader silver with a gentler core streak */
+  background:
+    radial-gradient(140px 240px at 45% 50%, rgba(255,255,255,0.40), rgba(255,255,255,0.14) 42%, transparent 72%),
+    linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%);
+  filter: blur(14px);
+  animation: metal-sheen-sweep 780ms ease-out forwards;
+}
+
+/* Wide variant: broad, low-contrast sheen that travels fully across */
+@keyframes metal-sheen-sweep-wide {
+  0% { opacity: 0; transform: translateX(-60%) skewX(-8deg); }
+  18% { opacity: .65; }
+  100% { opacity: 0; transform: translateX(160%) skewX(-8deg); }
+}
+.metal-wisp-wide {
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+  overflow: hidden;
+}
+.metal-wisp-wide::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  left: -60%;
+  width: 120%;
+  height: 170%;
+  background:
+    radial-gradient(260px 320px at 50% 50%, rgba(255,255,255,0.28), rgba(255,255,255,0.10) 45%, transparent 80%),
+    linear-gradient(90deg, transparent 22%, rgba(255,255,255,0.40) 50%, transparent 78%);
+  filter: blur(16px);
+  animation: metal-sheen-sweep-wide 880ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metal-wisp::after, .metal-wisp-wide::after { display: none; }
+}
+
+/* Interactive metallic reflection (driven by --mx/--my/--rx/--ry/--elev) */
+.metal-interactive {
+  --rx: 0deg; /* tilt X */
+  --ry: 0deg; /* tilt Y */
+  --mx: 50%;  /* highlight center X */
+  --my: 50%;  /* highlight center Y */
+  --ang: 0deg; /* highlight band angle */
+  --elev: 0px; /* subtle lift */
+  position: relative;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transition: transform 200ms ease, box-shadow 200ms ease;
+  transform: perspective(900px) rotateX(var(--rx)) rotateY(var(--ry)) translateZ(var(--elev));
+  contain: layout paint style; /* restrict paint scope for perf */
+  will-change: transform;
+  isolation: isolate; /* ensure blend/mask compositing stays within panel */
+}
+.metal-interactive:hover {
+  --elev: 6px;
+}
+/* Keep ::before as the subtle titanium grain */
+.metal-interactive::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0.35;
+  background-image:
+    repeating-linear-gradient(var(--ang), rgba(255,255,255,0.035) 0 2px, rgba(0,0,0,0) 2px 5px);
+  background-size: 300% 300%;
+  background-position: calc(50% + var(--dx, 0px)) calc(50% + var(--dy, 0px));
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  filter: saturate(110%) blur(0.2px);
+}
+/* Add ::after as the visible moving reflection band */
+.metal-interactive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  mix-blend-mode: soft-light;
+  opacity: var(--shine);
+  transition: opacity 220ms ease-out;
+  /* Ultra soft specular band; very wide shoulders to avoid any hard edges */
+  background-image: linear-gradient(
+    var(--ang),
+    rgba(255,255,255,0) 12%,
+    rgba(255,255,255,0.04) 34%,
+    rgba(255,255,255,0.18) 50%,
+    rgba(255,255,255,0.04) 66%,
+    rgba(255,255,255,0) 88%
+  );
+  background-size: 220% 220%;
+  background-position: calc(50% + var(--dx, 0px)) calc(50% + var(--dy, 0px));
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  filter: saturate(100%) blur(2.6px);
+  z-index: 2; /* ensure sheen sits above content and grain */
+  /* Clear any radial mask to remove vignette */
+  -webkit-mask-image: none;
+  mask-image: none;
+  -webkit-mask-repeat: initial;
+  mask-repeat: initial;
+  -webkit-mask-size: initial;
+  mask-size: initial;
+  will-change: background-position, opacity;
+  transform: translateZ(0); /* promote layer for more stable sampling */
+}
+.metal-interactive:hover::after { opacity: 0.75; }
+
+/* Enable GPU acceleration and consistent painting */
+.metal-interactive, .metal-interactive::before, .metal-interactive::after { will-change: transform, opacity; }
+
+@media (prefers-reduced-motion: reduce) {
+  .metal-interactive { transform: none !important; transition: none !important; }
+  .metal-interactive::before { opacity: 0.25; }
+  .metal-interactive::after { opacity: 0.4; }
 }
