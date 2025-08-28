@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
 
-export default function Landing() {
+export default function Landing({ onStart }: { onStart?: () => void }) {
   return (
     <div className="relative overflow-hidden">
       {/* Background video + ambient gradients */}
@@ -91,8 +91,15 @@ export default function Landing() {
                 Purely frontend demo for now—experience the interface and motion design.
               </p>
               <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+                {/* If onStart provided, intercept click and open sign-up modal */}
                 <Link
                   to="/start"
+                  onClick={(e) => {
+                    if (onStart) {
+                      e.preventDefault()
+                      onStart()
+                    }
+                  }}
                   className="inline-flex items-center gap-2 rounded-md btn-accent px-5 py-3 text-white shadow-sm transition"
                 >
                   Start your design

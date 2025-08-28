@@ -14,6 +14,7 @@ import ProfileSettings from './pages/ProfileSettings'
 import Projects from './pages/Projects'
 import Settings from './pages/Settings'
 import ProjectUpload from './pages/ProjectUpload'
+import Feed from './pages/Feed'
 
 function App() {
   const navigate = useNavigate()
@@ -93,15 +94,26 @@ function App() {
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
       if (!mounted) return
       setUser(data.session?.user ?? null)
+      console.log('[AUTH] getSession user=', data.session?.user?.id || null)
     })
     const { data: sub } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setUser(session?.user ?? null)
+      console.log('[AUTH] onAuthStateChange user=', session?.user?.id || null)
+      if (session?.user) {
+        // Ensure home route re-evaluates element when auth changes
+        navigate('/', { replace: true })
+      }
     })
     return () => {
       mounted = false
       sub.subscription.unsubscribe()
     }
   }, [])
+
+  // Debug current user state
+  useEffect(() => {
+    console.log('[AUTH] user state changed ->', user ? { id: user.id, email: user.email } : null)
+  }, [user])
 
   // Drive visible/closing state from authOpen for seamless animations
   useEffect(() => {
@@ -135,6 +147,98 @@ function App() {
 
   // Cleanup rAF on unmount
   useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current) }, [])
+
+  // --- Corner logo spin management ---
+  const logoImgRef = useRef<HTMLImageElement | null>(null)
+  const logoSpinRef = useRef<Animation | null>(null)
+  const logoDecelRef = useRef<Animation | null>(null)
+
+  // --- Auth modal logo loading spin ---
+  const modalLogoRef = useRef<HTMLImageElement | null>(null)
+  const modalSpinRef = useRef<Animation | null>(null)
+  const startModalSpin = () => {
+    const img = modalLogoRef.current
+    if (!img) return
+    modalSpinRef.current?.cancel()
+    img.style.removeProperty('transform')
+    modalSpinRef.current = img.animate(
+      [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+      { duration: 900, iterations: Infinity, easing: 'linear' }
+    )
+  }
+  const stopModalSpin = () => {
+    modalSpinRef.current?.cancel()
+    modalSpinRef.current = null
+  }
+
+  const getRotationDeg = (el: HTMLElement): number => {
+    const st = getComputedStyle(el)
+    const tr = st.transform
+    if (!tr || tr === 'none') return 0
+    // matrix(a, b, c, d, e, f)
+    const m2d = tr.match(/matrix\(([^)]+)\)/)
+    if (m2d) {
+      const parts = m2d[1].split(',').map((v) => parseFloat(v.trim()))
+      const a = parts[0] ?? 1
+      const b = parts[1] ?? 0
+      return Math.atan2(b, a) * (180 / Math.PI)
+    }
+    // matrix3d(...)
+    const m3d = tr.match(/matrix3d\(([^)]+)\)/)
+    if (m3d) {
+      const p = m3d[1].split(',').map((v) => parseFloat(v.trim()))
+      // 2D rotation components are a = m11, b = m12 in 3d matrix
+      const a = p[0] ?? 1
+      const b = p[1] ?? 0
+      return Math.atan2(b, a) * (180 / Math.PI)
+    }
+    return 0
+  }
+
+  const handleLogoEnter = () => {
+    const img = logoImgRef.current
+    if (!img) return
+    // Cancel any deceleration and infinite spin before starting a new one
+    logoDecelRef.current?.cancel()
+    logoSpinRef.current?.cancel()
+    img.style.removeProperty('transform')
+    logoSpinRef.current = img.animate(
+      [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+      { duration: 1200, iterations: Infinity, easing: 'linear' }
+    )
+  }
+
+  const handleLogoLeave = () => {
+    const img = logoImgRef.current
+    if (!img) return
+    // Capture current rotation angle
+    const currentDeg = getRotationDeg(img)
+    // Stop infinite spin
+    logoSpinRef.current?.cancel()
+    logoSpinRef.current = null
+    // Normalize angle to [0, 360)
+    const base = ((currentDeg % 360) + 360) % 360
+    // Seamless deceleration to the original starting pose (0deg)
+    // Only finish the current rotation: rotate the remaining amount to reach the next exact 0deg.
+    const toNextZero = (360 - base) % 360
+    const total = toNextZero
+    // Continue briefly at current speed, then ease-out to stop exactly at 0deg
+    const linearPortion = Math.min(80, Math.max(40, total * 0.35)) // degrees during linear phase
+    const mid = base + linearPortion
+    const target = base + total // lands exactly at 0deg modulo 360
+    // Duration scales with remaining angle so short remainders stop faster
+    const duration = Math.round(350 + (total / 360) * 350) // 350–700ms
+    logoDecelRef.current?.cancel()
+    img.style.transform = `rotate(${base}deg)`
+    logoDecelRef.current = img.animate(
+      [
+        { transform: `rotate(${base}deg)`, easing: 'linear', offset: 0 },
+        { transform: `rotate(${mid}deg)`, easing: 'linear', offset: 0.35 },
+        { transform: `rotate(${target}deg)`, easing: 'cubic-bezier(.08,.8,.18,1)', offset: 1 },
+      ],
+      { duration, fill: 'forwards' }
+    )
+  }
 
   const handlePanelLeave = () => {
     const el = panelRef.current
@@ -220,24 +324,25 @@ function App() {
     <div className="min-h-full flex flex-col texture-concrete-dark">
       <header className="border-b border-white/10 bg-neutral-950/60 backdrop-blur-xl sticky top-0 z-10">
         <div className="relative mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
-          {/* Centered brand text logo */}
-          <NavLink
-            to="/"
-            aria-label="Genesis AI Home"
-            className="absolute left-1/2 -translate-x-1/2 hidden sm:block select-none"
-          >
-            <MetalInteractiveInline mode="text">
-              <span className="metal-text-satin metal-shine text-lg md:text-2xl font-extrabold tracking-[0.35em] drop-shadow-[0_1px_6px_rgba(165,136,239,0.25)]">
-                GENESIS AI
-              </span>
-            </MetalInteractiveInline>
-          </NavLink>
+          {/* Centered brand text logo (perfectly centered) */}
+          <div className="absolute inset-0 hidden sm:flex items-center justify-center pointer-events-none">
+            <NavLink to="/" aria-label="Genesis AI Home" className="select-none pointer-events-auto">
+              <MetalInteractiveInline mode="text">
+                <span className="metal-text-satin text-xl md:text-3xl font-extrabold tracking-[0.35em] drop-shadow-[0_1px_6px_rgba(165,136,239,0.25)]">
+                  GENESIS
+                </span>
+              </MetalInteractiveInline>
+            </NavLink>
+          </div>
           <NavLink to="/" className="text-xl font-semibold tracking-tight">
             <span className="sr-only">Genesis AI</span>
-            <MetalInteractiveInline mode="image" maskSrc="/media/genesis-logo.png" className="spin-on-hover">
+            <MetalInteractiveInline mode="image" maskSrc="/media/genesis-logo.png" className="spin-managed">
               <img
                 src="/media/genesis-logo.png"
                 alt="Genesis AI logo"
+                ref={logoImgRef}
+                onMouseEnter={handleLogoEnter}
+                onMouseLeave={handleLogoLeave}
                 className="h-12 w-12 sm:h-16 sm:w-16 select-none"
                 draggable={false}
               />
@@ -409,7 +514,16 @@ function App() {
 
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<Landing />} />
+          <Route
+            path="/"
+            element={
+              user ? (
+                <Feed />
+              ) : (
+                <Landing onStart={() => { setMode('signUp'); setAuthOpen(true) }} />
+              )
+            }
+          />
           <Route path="/start" element={<IntakeForm />} />
           <Route path="/preview" element={<Preview />} />
           <Route path="/profile" element={<Profile />} />
@@ -444,10 +558,11 @@ function App() {
             <div className="mb-5 text-center">
               <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight flex items-center justify-center">
                 <span className="sr-only">Genesis AI</span>
-                <MetalInteractiveInline mode="image" maskSrc="/media/genesis-logo.png" className="spin-on-hover">
+                <MetalInteractiveInline mode="image" maskSrc="/media/genesis-logo.png" className="spin-managed">
                   <img
                     src="/media/genesis-logo.png"
                     alt="Genesis AI logo"
+                    ref={modalLogoRef}
                     className="h-24 w-24 sm:h-28 sm:w-28 select-none"
                     draggable={false}
                   />
@@ -478,6 +593,7 @@ function App() {
                 setAuthError('')
                 setAuthNotice('')
                 setSubmitting(true)
+                startModalSpin()
                 try {
                   const em = email.trim()
                   if (mode === 'signIn') {
@@ -519,6 +635,7 @@ function App() {
                   }
                 }
                 finally {
+                  stopModalSpin()
                   setSubmitting(false)
                 }
               }}

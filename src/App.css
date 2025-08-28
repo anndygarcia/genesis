@@ -27,6 +27,26 @@
   }
 }
 
+/* Corner logo: spin continuously while hovered */
+.spin-on-hover {
+  will-change: transform;
+  transform-origin: center;
+  display: inline-block; /* allow rotation of the wrapper */
+}
+/* Do not animate the wrapper itself to avoid conflicts with MetalInteractiveInline transforms */
+.spin-on-hover:hover {
+  animation: none;
+}
+/* Animate the direct child image continuously while hovered */
+.spin-on-hover > img {
+  display: block;
+  will-change: transform;
+  transform-origin: center;
+}
+.spin-on-hover:hover > img {
+  animation: logo-spin 1.2s linear infinite !important;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   a:nth-of-type(2) .logo {
     animation: logo-spin infinite 20s linear;
