@@ -127,7 +127,7 @@ function Settings() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <h1 className="text-2xl font-semibold text-white">Settings</h1>
       <p className="mt-2 text-neutral-400">Manage your account and application preferences.</p>
 

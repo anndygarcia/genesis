@@ -181,7 +181,7 @@ function ProfileSettings() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="text-neutral-300">Loading profile…</div>
       </div>
     )
@@ -189,14 +189,14 @@ function ProfileSettings() {
 
   if (error && !userId) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <p className="text-red-400">{error}</p>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <h1 className="text-2xl font-semibold text-white">Profile Settings</h1>
       <p className="mt-1 text-sm text-neutral-400">Signed in as {email}</p>
 

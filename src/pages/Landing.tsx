@@ -71,7 +71,7 @@ export default function Landing({ onStart }: { onStart?: () => void }) {
         <div className="absolute left-[-10%] bottom-[-20%] h-[30rem] w-[30rem] rounded-full blur-3xl opacity-20 bg-[radial-gradient(circle_at_center,theme(colors.cyan.400/.6),transparent_60%)]" />
       </div>
 
-      <section className="mx-auto max-w-6xl px-4 pb-16 pt-20 sm:pt-28">
+      <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16 pt-20 sm:pt-28">
         {/* Dark concrete hero panel */}
         <div className="rounded-3xl texture-concrete-dark p-6 sm:p-10 border border-white/5 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
           <div className="grid items-center justify-items-center gap-10 md:grid-cols-1">

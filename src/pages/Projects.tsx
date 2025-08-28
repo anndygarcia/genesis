@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react'
 
 function Projects() {
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <h1 className="text-2xl font-semibold text-white">Projects</h1>
       <p className="mt-2 text-neutral-400">Create a new project or browse your upcoming projects.</p>
 

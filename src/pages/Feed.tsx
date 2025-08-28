@@ -48,7 +48,7 @@ export default function Feed() {
   }, [])
 
   return (
-    <div className="mx-auto max-w-2xl p-4 sm:p-6">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
       <h1 className="sr-only">Feed</h1>
       {loading ? (
         <div className="text-neutral-400">Loading feed…</div>

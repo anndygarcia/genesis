@@ -3,7 +3,7 @@ import { Box, Square, Wand2 } from 'lucide-react'
 
 export default function Preview() {
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-100">Design Preview</h1>
         <Link to="/start" className="text-sm text-[#a588ef] hover:underline">Edit inputs</Link>

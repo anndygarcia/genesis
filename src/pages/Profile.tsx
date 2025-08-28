@@ -65,7 +65,7 @@ function Profile() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="text-neutral-300">Loading profile…</div>
       </div>
     )
@@ -73,7 +73,7 @@ function Profile() {
 
   if (error && !userId) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <p className="text-red-400">{error}</p>
       </div>
     )
@@ -88,7 +88,7 @@ function Profile() {
   })()
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-start gap-6">
         <div className="h-28 w-28 rounded-full bg-neutral-800 border border-white/10 overflow-hidden grid place-items-center">

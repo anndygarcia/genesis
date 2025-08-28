@@ -21,7 +21,7 @@ export default function ProjectUpload() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <h1 className="text-2xl font-semibold text-white">Upload a new project</h1>
       <p className="mt-1 text-neutral-400">Add photos, plans, or references to start a new project.</p>
 

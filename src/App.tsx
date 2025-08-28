@@ -323,7 +323,7 @@ function App() {
   return (
     <div className="min-h-full flex flex-col texture-concrete-dark">
       <header className="border-b border-white/10 bg-neutral-950/60 backdrop-blur-xl sticky top-0 z-10">
-        <div className="relative mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
+        <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           {/* Centered brand text logo (perfectly centered) */}
           <div className="absolute inset-0 hidden sm:flex items-center justify-center pointer-events-none">
             <NavLink to="/" aria-label="Genesis AI Home" className="select-none pointer-events-auto">
