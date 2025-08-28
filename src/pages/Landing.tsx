@@ -105,12 +105,6 @@ export default function Landing({ onStart }: { onStart?: () => void }) {
                   Start your design
                   <ArrowRight className="size-4" />
                 </Link>
-                <Link
-                  to="/preview"
-                  className="inline-flex items-center gap-2 rounded-md border px-5 py-3 text-neutral-700 dark:text-neutral-200 hover:bg-white/60 dark:hover:bg-neutral-900/60 backdrop-blur transition"
-                >
-                  View preview
-                </Link>
               </div>
             </div>
             {/* Right-side illustration removed for a more symmetrical, centered hero */}
