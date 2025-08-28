@@ -1,11 +1,61 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 
 export default function Landing({ onStart }: { onStart?: () => void }) {
+  // Native video background (most reliable). Allow env override; default to local file.
+  const videoWebm = (import.meta.env.VITE_HERO_VIDEO_WEBM as string | undefined) ?? '/media/modern-home-video.webm'
+  const videoMp4 = (import.meta.env.VITE_HERO_VIDEO_MP4 as string | undefined) ?? '/media/modern-home-video.mp4'
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  useEffect(() => {
+    const el = videoRef.current
+    if (!el) return
+    // Ensure muted & inline before attempting playback
+    el.defaultMuted = true
+    el.muted = true
+    el.playsInline = true
+
+    const tryPlay = () => {
+      const v = videoRef.current
+      if (!v) return
+      if (document.visibilityState !== 'visible') return
+      const p = v.play()
+      if (p && typeof p.then === 'function') {
+        p.catch(() => {
+          // Ignored: will retry on next user interaction
+        })
+      }
+    }
+
+    // Attempt immediately and on visibility changes
+    tryPlay()
+    const onVis = () => tryPlay()
+
+    // First user interaction fallback for stricter policies
+    let interacted = false
+    const onFirstInteract = () => {
+      if (interacted) return
+      interacted = true
+      tryPlay()
+      window.removeEventListener('pointerdown', onFirstInteract)
+      window.removeEventListener('keydown', onFirstInteract)
+    }
+
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('pointerdown', onFirstInteract, { once: true })
+    window.addEventListener('keydown', onFirstInteract, { once: true })
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('pointerdown', onFirstInteract)
+      window.removeEventListener('keydown', onFirstInteract)
+    }
+  }, [])
   return (
     <div className="relative overflow-hidden">
       {/* Background video + ambient gradients */}
-      <div aria-hidden className="absolute inset-0 -z-10 pointer-events-none">
+      <div aria-hidden className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
         <video
           className="h-full w-full object-cover"
           autoPlay
@@ -14,54 +64,17 @@ export default function Landing({ onStart }: { onStart?: () => void }) {
           playsInline
           preload="auto"
           poster="/vite.svg"
-          onLoadedMetadata={(e) => {
-            const v = e.currentTarget
-            console.log('[BG-VIDEO] loadedmetadata', {
-              duration: v.duration,
-              videoWidth: v.videoWidth,
-              videoHeight: v.videoHeight,
-              readyState: v.readyState,
-            })
-          }}
-          onPlay={() => console.log('[BG-VIDEO] play fired')}
-          onError={(e) => {
-            const el = e.currentTarget
-            const mediaErr = el.error
-            const code = mediaErr?.code ?? 0
-            // 1: MEDIA_ERR_ABORTED, 2: MEDIA_ERR_NETWORK, 3: MEDIA_ERR_DECODE, 4: MEDIA_ERR_SRC_NOT_SUPPORTED
-            console.error('[BG-VIDEO] error', {
-              message: mediaErr?.message ?? 'unknown',
-              code,
-              currentSrc: el.currentSrc,
-              networkState: el.networkState,
-              readyState: el.readyState,
-            })
-          }}
-          onLoadedData={(e) => {
-            const v = e.currentTarget
-            console.log('[BG-VIDEO] loadeddata', { readyState: v.readyState, currentSrc: v.currentSrc })
-          }}
-          onCanPlay={(e) => {
-            const v = e.currentTarget
-            console.log('[BG-VIDEO] canplay', { readyState: v.readyState, currentSrc: v.currentSrc })
-          }}
-          onCanPlayThrough={(e) => console.log('[BG-VIDEO] canplaythrough, readyState=', e.currentTarget.readyState)}
-          onStalled={() => console.warn('[BG-VIDEO] stalled')}
-          onWaiting={() => console.warn('[BG-VIDEO] waiting')}
-          onSuspend={() => console.warn('[BG-VIDEO] suspend (loading paused)')}
-          onProgress={(e) => {
-            const v = e.currentTarget
-            const ranges = [] as string[]
-            for (let i = 0; i < v.buffered.length; i++) {
-              ranges.push(`${v.buffered.start(i).toFixed(2)}-${v.buffered.end(i).toFixed(2)}`)
-            }
-            console.log('[BG-VIDEO] progress buffered=', ranges.join(','))
+          ref={videoRef}
+          onCanPlay={() => {
+            // Try again when enough data is available
+            try {
+              videoRef.current?.play()
+            } catch {}
           }}
         >
-          {/* Prefer WebM first (confirmed it plays in your Chrome); add cache-busting */}
-          <source src="/media/modern-home-video.webm?v=1" type="video/webm" />
-          {/* MP4 fallback */}
-          <source src="/media/modern-home-video.mp4?v=1" type="video/mp4" />
+          {/* Prefer WebM when available for broader compatibility; browser will skip missing/unsupported sources */}
+          <source src={videoWebm} type="video/webm" />
+          <source src={videoMp4} type="video/mp4" />
         </video>
         {/* darken for readability */}
         <div className="absolute inset-0 bg-black/50" />
