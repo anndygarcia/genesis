@@ -6,6 +6,7 @@ function ProfileSettings() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>('')
   const [notice, setNotice] = useState<string>('')
+  const [showToast, setShowToast] = useState(false)
 
   const [userId, setUserId] = useState<string>('')
   const [email, setEmail] = useState<string>('')
@@ -66,6 +67,13 @@ function ProfileSettings() {
     })()
     return () => { mounted = false }
   }, [])
+
+  useEffect(() => {
+    if (!notice) return
+    setShowToast(true)
+    const t = setTimeout(() => setShowToast(false), 3000)
+    return () => clearTimeout(t)
+  }, [notice])
 
   async function refreshFromServer() {
     setError('')
@@ -197,6 +205,22 @@ function ProfileSettings() {
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Success toast */}
+      <div className={`fixed top-20 right-6 z-20 transition-all duration-300 ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'}`} role="status" aria-live="polite">
+        {notice && (
+          <div className="flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-600/15 text-emerald-300 px-4 py-2 shadow-lg">
+            <span className="text-sm">{notice}</span>
+            <button
+              type="button"
+              className="ml-2 text-emerald-200/80 hover:text-emerald-100"
+              onClick={() => setShowToast(false)}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+      </div>
       <h1 className="text-2xl font-semibold text-white">Profile Settings</h1>
       <p className="mt-1 text-sm text-neutral-400">Signed in as {email}</p>
 

@@ -1,92 +1,177 @@
-import { useEffect, useState } from 'react'
-import { Heart, MessageCircle, Share2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../lib/supabase'
+import { useNavigate } from 'react-router-dom'
+import { Canvas, useThree } from '@react-three/fiber'
+import { Suspense } from 'react'
+import { useGLTF } from '@react-three/drei'
+import * as THREE from 'three'
+import LogoSpinner from '../components/LogoSpinner'
 
-// TODO: Replace mock with Supabase query joining projects + users
-// type Post = { id: string; user: { id: string; name: string; avatarUrl?: string }; image: string; title: string; location?: string; likes: number; comments: number; createdAt: string }
+type Home = { id: string; name: string; public_url: string; created_at?: string | null }
+
+function GLBThumb({ url, className }: { url: string; className?: string }) {
+  return (
+    <div className={className}>
+      <Canvas
+        dpr={[1, 1]}
+        frameloop="demand"
+        camera={{ position: [0.8, 0.9, 2.2], fov: 38 }}
+        gl={{
+          antialias: false,
+          powerPreference: 'low-power',
+          alpha: true,
+          preserveDrawingBuffer: false,
+          outputColorSpace: THREE.SRGBColorSpace,
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.4,
+        }}
+      >
+        <color attach="background" args={[0x1a1a1a]} />
+        <ambientLight intensity={1.4} />
+        <hemisphereLight args={[0xffffff, 0x666666, 0.9]} />
+        <directionalLight position={[2, 3, 2]} intensity={1.2} />
+        <directionalLight position={[-3, 2, 1]} intensity={0.7} />
+        <Suspense fallback={null}>
+          <ThumbModel url={url} />
+        </Suspense>
+      </Canvas>
+    </div>
+  )
+}
+
+function ThumbModel({ url }: { url: string }) {
+  const { scene } = useGLTF(url, true)
+  const { camera, invalidate } = useThree()
+  const cloned = useMemo(() => scene.clone(true), [scene])
+  useEffect(() => {
+    const box = new THREE.Box3().setFromObject(cloned)
+    const size = new THREE.Vector3()
+    const center = new THREE.Vector3()
+    box.getSize(size)
+    box.getCenter(center)
+    const maxDim = Math.max(size.x, size.y, size.z)
+    if (maxDim > 0) {
+      const scale = 2 / maxDim
+      cloned.scale.setScalar(scale)
+      const sBox = new THREE.Box3().setFromObject(cloned)
+      sBox.getSize(size)
+      sBox.getCenter(center)
+    }
+    cloned.position.sub(center)
+
+    // Normalize materials to avoid overly dark/transparent look
+    cloned.traverse((obj) => {
+      const m = obj as THREE.Mesh
+      if ((m as any).isMesh) {
+        const mat: any = m.material
+        if (Array.isArray(mat)) {
+          mat.forEach((mm: any) => {
+            mm.side = THREE.DoubleSide
+            if (mm.transparent && mm.opacity < 0.2) { mm.transparent = false; mm.opacity = 1 }
+            if (!mm.map && mm.color && mm.color.r < 0.02 && mm.color.g < 0.02 && mm.color.b < 0.02) {
+              mm.color = new THREE.Color('#bfbfbf')
+            }
+          })
+        } else if (mat) {
+          mat.side = THREE.DoubleSide
+          if (mat.transparent && mat.opacity < 0.2) { mat.transparent = false; mat.opacity = 1 }
+          if (!mat.map && mat.color && mat.color.r < 0.02 && mat.color.g < 0.02 && mat.color.b < 0.02) {
+            mat.color = new THREE.Color('#bfbfbf')
+          }
+        }
+      }
+    })
+
+    const dist = Math.max(size.x, size.y, size.z) * 0.9 + 0.8
+    camera.position.set(0.9, 0.9, dist)
+    camera.lookAt(0, 0, 0)
+    camera.updateProjectionMatrix()
+    invalidate()
+  }, [cloned, camera, invalidate])
+  return <primitive object={cloned} />
+}
 
 export default function Feed() {
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
-  const [posts, setPosts] = useState<any[]>([])
+  const [homes, setHomes] = useState<Home[]>([])
 
   useEffect(() => {
     let mounted = true
-    // Mock data – swap for Supabase fetch
-    const mock = [
-      {
-        id: 'p1',
-        user: { id: 'u1', name: 'Ava Chen', avatarUrl: undefined },
-        image: 'https://images.unsplash.com/photo-1501183638710-841dd1904471?q=80&w=1600&auto=format&fit=crop',
-        title: 'Modern hillside retreat',
-        location: 'Montecito, CA',
-        likes: 128,
-        comments: 12,
-        createdAt: '2025-08-20T12:00:00Z',
-      },
-      {
-        id: 'p2',
-        user: { id: 'u2', name: 'Liam Patel', avatarUrl: undefined },
-        image: 'https://images.unsplash.com/photo-1505691723518-36a5ac3b2a59?q=80&w=1600&auto=format&fit=crop',
-        title: 'Lakefront glass pavilion',
-        location: 'Lake Tahoe, NV',
-        likes: 214,
-        comments: 33,
-        createdAt: '2025-08-21T16:30:00Z',
-      },
-      {
-        id: 'p3',
-        user: { id: 'u3', name: 'You', avatarUrl: undefined },
-        image: 'https://images.unsplash.com/photo-1494526585095-c41746248156?q=80&w=1600&auto=format&fit=crop',
-        title: 'Your latest concept',
-        location: 'Austin, TX',
-        likes: 42,
-        comments: 5,
-        createdAt: '2025-08-22T09:10:00Z',
-      },
-    ]
-    setTimeout(() => { if (mounted) { setPosts(mock); setLoading(false) } }, 400)
-    return () => { mounted = false }
+    const fetchHomes = async () => {
+      const { data, error } = await supabase
+        .from('homes')
+        .select('id,name,public_url,created_at')
+        .order('created_at', { ascending: false })
+        .limit(100)
+      if (!mounted) return
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error('[Feed] homes fetch error', error.message)
+        setHomes([])
+      } else {
+        // dedupe by public_url keeping first occurrence (newest due to order)
+        const seen = new Set<string>()
+        const dedup = (data || []).filter((h) => {
+          if (!h.public_url) return false
+          if (seen.has(h.public_url)) return false
+          seen.add(h.public_url)
+          return true
+        }) as Home[]
+        setHomes(dedup)
+      }
+      setLoading(false)
+    }
+    fetchHomes()
+
+    // realtime subscription for inserts
+    const channel = supabase.channel('homes-feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'homes' }, (payload: any) => {
+        const h = payload.new as Home
+        if (!h?.public_url) return
+        // prepend if new unique URL
+        setHomes((prev) => {
+          if (prev.some((p) => p.public_url === h.public_url)) return prev
+          return [h, ...prev]
+        })
+      })
+      .subscribe()
+
+    return () => {
+      mounted = false
+      try { supabase.removeChannel(channel) } catch {}
+    }
   }, [])
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
       <h1 className="sr-only">Feed</h1>
       {loading ? (
-        <div className="text-neutral-400">Loading feed…</div>
-      ) : posts.length === 0 ? (
-        <div className="text-neutral-400">No posts yet. Follow creators or upload your first project.</div>
+        <div className="relative min-h-[240px]">
+          <div className="absolute inset-0 grid place-items-center">
+            <div className="bg-black/10 rounded-lg p-1 border border-white/5 shadow-[0_0_12px_rgba(165,136,239,0.2)]">
+              <LogoSpinner size={24} className="animate-spin-slow" />
+            </div>
+          </div>
+        </div>
+      ) : homes.length === 0 ? (
+        <div className="text-neutral-400">No homes yet. Upload a GLB to get started.</div>
       ) : (
-        <ul className="space-y-6">
-          {posts.map((post) => (
-            <li key={post.id} className="rounded-xl border border-white/10 bg-neutral-900/60 overflow-hidden">
-              <header className="flex items-center gap-3 p-3">
-                <div className="h-10 w-10 rounded-full bg-neutral-800 border border-white/10 grid place-items-center text-neutral-300">
-                  {(post.user.name?.[0] || 'U').toUpperCase()}
+        <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {homes.map((h) => (
+            <li key={h.id} className="rounded-lg border border-white/10 bg-neutral-900/60 overflow-hidden">
+              <button
+                className="w-full text-left"
+                onClick={() => navigate(`/viewer-upload?glb=${encodeURIComponent(h.public_url)}`)}
+                title={`Open ${h.name}`}
+              >
+                <div className="aspect-[4/3] bg-neutral-800">
+                  <GLBThumb url={h.public_url} className="w-full h-full" />
                 </div>
-                <div className="min-w-0">
-                  <div className="text-white font-medium truncate">{post.user.name}</div>
-                  <div className="text-xs text-neutral-400 truncate">{post.location || '—'}</div>
+                <div className="p-3">
+                  <div className="text-white truncate">{h.name}</div>
                 </div>
-              </header>
-              <figure className="aspect-[4/3] bg-neutral-800">
-                <img src={post.image} alt={post.title} className="h-full w-full object-cover" />
-              </figure>
-              <div className="p-3">
-                <div className="text-white font-medium">{post.title}</div>
-                <div className="mt-3 flex items-center gap-4 text-neutral-300">
-                  <button className="inline-flex items-center gap-1 hover:text-white">
-                    <Heart className="size-4" />
-                    <span className="text-sm">{post.likes}</span>
-                  </button>
-                  <button className="inline-flex items-center gap-1 hover:text-white">
-                    <MessageCircle className="size-4" />
-                    <span className="text-sm">{post.comments}</span>
-                  </button>
-                  <button className="inline-flex items-center gap-1 hover:text-white ml-auto">
-                    <Share2 className="size-4" />
-                    <span className="text-sm">Share</span>
-                  </button>
-                </div>
-              </div>
+              </button>
             </li>
           ))}
         </ul>

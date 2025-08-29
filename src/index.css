@@ -606,3 +606,67 @@ textarea::placeholder {
   .metal-interactive::before { opacity: 0.25; }
   .metal-interactive::after { opacity: 0.4; }
 }
+
+/* Subtle linear highlight traveling along button edge */
+@keyframes rotate-edge-line {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.btn-rotate-glow { position: relative; isolation: isolate; }
+.btn-rotate-glow::before {
+  content: "";
+  position: absolute;
+  inset: -1px; /* tiny bleed to avoid gaps */
+  border-radius: inherit;
+  pointer-events: none;
+  /* Very narrow bright arc that moves around */
+  background: conic-gradient(
+    from 0deg,
+    rgba(127,99,214,0) 0deg,
+    rgba(165,136,239,0) 330deg,
+    rgba(165,136,239,0.9) 345deg,
+    rgba(165,136,239,0) 360deg
+  );
+  transform-origin: center;
+  animation: rotate-edge-line 2.8s linear infinite;
+  filter: blur(0.6px);
+  /* Mask to show only a thin border line */
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1px)) content-box;
+          mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1px)) content-box;
+  padding: 1px; /* pairs with content-box for the mask */
+  z-index: 1;
+}
+.btn-rotate-glow::after {
+  /* keep a crisp inner stroke only, no big glow */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(165,136,239,0.35) inset;
+  z-index: 0;
+}
+.btn-rotate-glow > * { position: relative; z-index: 2; }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-rotate-glow::before { animation: none; }
+}
+
+/* Subtle pulsing ring for CTA buttons */
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 1px rgba(165,136,239,0.28) inset, 0 0 8px rgba(165,136,239,0.18); opacity: 0.9; }
+  50%  { box-shadow: 0 0 0 1px rgba(165,136,239,0.45) inset, 0 0 14px rgba(165,136,239,0.32); opacity: 1; }
+  100% { box-shadow: 0 0 0 1px rgba(165,136,239,0.28) inset, 0 0 8px rgba(165,136,239,0.18); opacity: 0.9; }
+}
+.btn-pulse { position: relative; isolation: isolate; }
+.btn-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: pulse-ring 2.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-pulse::after { animation: none; }
+}
