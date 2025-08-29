@@ -222,7 +222,7 @@ const GLBModel = forwardRef<GLBHandle, { url: string; onBounds?: (info: BoundsIn
   return <primitive object={cloned} />
 })
 
-useGLTF.preload('/placeholder.glb')
+
 
 export default function ViewerUpload() {
   const [localUrl, setLocalUrl] = useState<string>('')

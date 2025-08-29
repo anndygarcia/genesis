@@ -224,7 +224,7 @@ export default function Viewer() {
       <Canvas
         shadows
         dpr={[1, 2]}
-        onCreated={({ gl, size }) => {
+        onCreated={({ gl }) => {
           console.log('[Viewer] WebGLRenderer created', {
             webgl2: gl.getContext()?.constructor?.name,
             antialias: gl.getContextAttributes()?.antialias,
@@ -368,7 +368,7 @@ function Dummy2DCanvas() {
   )
 }
 
-useGLTF.preload('/placeholder.glb')
+
 
 // Renders children inside a Shadow DOM root to reduce interference from page-level content scripts/styles
 function ShadowHost({ children }: { children: React.ReactNode }) {

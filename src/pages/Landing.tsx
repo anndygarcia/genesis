@@ -3,9 +3,9 @@ import { ArrowRight } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
 export default function Landing({ onStart }: { onStart?: () => void }) {
-  // Native video background (most reliable). Allow env override; default to local file.
-  const videoWebm = (import.meta.env.VITE_HERO_VIDEO_WEBM as string | undefined) ?? '/media/modern-home-video.webm'
-  const videoMp4 = (import.meta.env.VITE_HERO_VIDEO_MP4 as string | undefined) ?? '/media/modern-home-video.mp4'
+  // Native video background (most reliable). Use env-only; no local fallback.
+  const videoWebm = (import.meta.env.VITE_HERO_VIDEO_WEBM as string | undefined) || ''
+  const videoMp4 = (import.meta.env.VITE_HERO_VIDEO_MP4 as string | undefined) || ''
   const videoRef = useRef<HTMLVideoElement | null>(null)
 
   useEffect(() => {
@@ -56,26 +56,31 @@ export default function Landing({ onStart }: { onStart?: () => void }) {
     <div className="relative overflow-hidden">
       {/* Background video + ambient gradients */}
       <div aria-hidden className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
-        <video
-          className="h-full w-full object-cover"
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
-          poster="/vite.svg"
-          ref={videoRef}
-          onCanPlay={() => {
-            // Try again when enough data is available
-            try {
-              videoRef.current?.play()
-            } catch {}
-          }}
-        >
-          {/* Prefer WebM when available for broader compatibility; browser will skip missing/unsupported sources */}
-          <source src={videoWebm} type="video/webm" />
-          <source src={videoMp4} type="video/mp4" />
-        </video>
+        {videoWebm || videoMp4 ? (
+          <video
+            className="h-full w-full object-cover"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+            poster="/vite.svg"
+            ref={videoRef}
+            onCanPlay={() => {
+              // Try again when enough data is available
+              try {
+                videoRef.current?.play()
+              } catch {}
+            }}
+          >
+            {/* Prefer WebM when available; browser will skip missing/unsupported sources */}
+            {videoWebm ? <source src={videoWebm} type="video/webm" /> : null}
+            {videoMp4 ? <source src={videoMp4} type="video/mp4" /> : null}
+          </video>
+        ) : (
+          // Fallback gradient background when no env video provided
+          <div className="h-full w-full bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-900" />
+        )}
         {/* darken for readability */}
         <div className="absolute inset-0 bg-black/50" />
         {/* subtle color glows on top */}
