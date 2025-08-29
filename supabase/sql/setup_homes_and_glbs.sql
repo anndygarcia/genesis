@@ -17,14 +17,16 @@ alter table public.homes enable row level security;
 
 -- Recreate policies safely (drop-if-exists)
 drop policy if exists "homes_select_own" on public.homes;
+drop policy if exists "homes_select_public" on public.homes;
 drop policy if exists "homes_insert_own" on public.homes;
 drop policy if exists "homes_update_own" on public.homes;
 drop policy if exists "homes_delete_own" on public.homes;
 
 -- Policies: owners can select/insert/update/delete their rows
-create policy "homes_select_own"
-  on public.homes for select to authenticated
-  using (user_id = auth.uid());
+-- Public can read all homes (global feed)
+create policy "homes_select_public"
+  on public.homes for select to public
+  using (true);
 
 create policy "homes_insert_own"
   on public.homes for insert to authenticated
