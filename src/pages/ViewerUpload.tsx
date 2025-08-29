@@ -247,18 +247,15 @@ export default function ViewerUpload() {
   const [loadingHomes, setLoadingHomes] = useState(false)
   // Note: useProgress works best within Canvas subtree; we'll use it in a Suspense fallback below
 
-  // Fetch user's homes for the library panel
+  // Fetch global homes for the library panel (public feed)
   const loadHomes = useCallback(async () => {
     setLoadingHomes(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setHomes([]); return }
       const { data, error } = await supabase
         .from('homes')
         .select('id,name,public_url,size,created_at,path')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(100)
+        .limit(200)
       if (!error) {
         const rows = (data as Home[]) || []
         // Deduplicate by public_url (fallback to path), keep the latest by created_at (already sorted desc)
@@ -268,6 +265,8 @@ export default function ViewerUpload() {
           if (!seen.has(key)) seen.set(key, r)
         }
         setHomes(Array.from(seen.values()))
+      } else {
+        setHomes([])
       }
     } finally {
       setLoadingHomes(false)
