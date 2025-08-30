@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, backfillUserGlbsToHomesAndProjects } from '../lib/supabase'
 
 function ProfileSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [avatarSaving, setAvatarSaving] = useState(false)
   const [error, setError] = useState<string>('')
   const [notice, setNotice] = useState<string>('')
   const [showToast, setShowToast] = useState(false)
@@ -75,6 +76,20 @@ function ProfileSettings() {
     return () => clearTimeout(t)
   }, [notice])
 
+  async function onBackfillGlbs() {
+    setError('')
+    setNotice('')
+    setSaving(true)
+    try {
+      const { homesInserted, projectsCreated } = await backfillUserGlbsToHomesAndProjects()
+      setNotice(`Backfill complete: ${homesInserted} homes added, ${projectsCreated} projects created`)
+    } catch (e: any) {
+      setError(e?.message || 'Backfill failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function refreshFromServer() {
     setError('')
     try {
@@ -101,17 +116,55 @@ function ProfileSettings() {
     }
   }
 
-  async function uploadAvatarIfNeeded(): Promise<string | null> {
-    if (!avatarFile || !userId) return null
-    const ext = avatarFile.name.split('.').pop()?.toLowerCase() || 'jpg'
+  async function uploadAvatar(file: File): Promise<string> {
+    if (!file || !userId) throw new Error('Missing file or user')
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const path = `${userId}/avatar.${ext}`
     const bucket = supabase.storage.from('avatars')
-    const { error: upErr } = await bucket.upload(path, avatarFile, { upsert: true, cacheControl: '3600', contentType: avatarFile.type })
-    if (upErr) {
-      throw upErr
-    }
+    const { error: upErr } = await bucket.upload(path, file, {
+      upsert: true,
+      cacheControl: '3600',
+      contentType: file.type || 'image/jpeg',
+    })
+    if (upErr) throw upErr
     const { data: pub } = bucket.getPublicUrl(path)
     return pub.publicUrl
+  }
+
+  async function uploadAvatarIfNeeded(): Promise<string | null> {
+    if (!avatarFile || !userId) return null
+    return uploadAvatar(avatarFile)
+  }
+
+  async function onAvatarChange(file: File | null) {
+    setAvatarFile(file)
+    if (!file) return
+    setError('')
+    setNotice('')
+    setAvatarSaving(true)
+    try {
+      const publicUrl = await uploadAvatar(file)
+      const { error: updErr } = await supabase.auth.updateUser({
+        data: { avatar_url: publicUrl },
+      })
+      if (updErr) throw updErr
+      setAvatarUrl(publicUrl)
+      setNotice('Profile photo updated')
+      // Refresh from server to ensure metadata is synced
+      try {
+        const { data } = await supabase.auth.getUser()
+        const u = data.user
+        if (u) {
+          const meta = (u.user_metadata || {}) as any
+          setAvatarUrl(meta.avatar_url || publicUrl)
+        }
+      } catch {}
+    } catch (e: any) {
+      const msg = e?.message || 'Failed to update profile photo'
+      setError(msg)
+    } finally {
+      setAvatarSaving(false)
+    }
   }
 
   async function onSave(e: React.FormEvent) {
@@ -243,9 +296,9 @@ function ProfileSettings() {
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
+                    onChange={(e) => onAvatarChange(e.target.files?.[0] || null)}
                   />
-                  Upload
+                  {avatarSaving ? 'Uploading…' : 'Upload'}
                 </label>
                 {avatarPreview && (
                   <button
@@ -390,13 +443,23 @@ function ProfileSettings() {
 
             <div className="flex items-center justify-between gap-3">
               <button type="button" onClick={refreshFromServer} className="text-sm text-neutral-400 hover:text-neutral-200">Refresh from server</button>
-              <button
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onBackfillGlbs}
+                  disabled={saving}
+                  className={`rounded-md border border-white/10 bg-neutral-800 px-3 py-2 text-sm text-neutral-200 hover:bg-white/5 ${saving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                >
+                  {saving ? 'Working…' : 'Backfill GLBs'}
+                </button>
+                <button
                 type="submit"
                 disabled={saving}
                 className={`btn-accent rounded-md px-4 py-2 text-white ${saving ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
                 {saving ? 'Saving…' : 'Save changes'}
-              </button>
+                </button>
+              </div>
             </div>
           </div>
         </div>

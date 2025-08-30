@@ -15,6 +15,11 @@ function makeStubClient() {
     console.warn(`[Supabase] ${action} skipped — Supabase not configured.`)
   }
 
+ 
+
+ 
+
+
   const stub = {
     auth: {
       async getSession() { return { data: { session: null }, error: null as any } },
@@ -98,6 +103,52 @@ export async function uploadReferenceImages(
   return urls
 }
 
+// Upload GLBs to 'glbs' bucket and create rows in public.homes for global visibility
+export type HomeInsert = {
+  user_id: string
+  name: string
+  path: string
+  public_url: string
+  size?: number | null
+}
+
+export async function uploadGlbsAndInsertHomes(glbFiles: File[]): Promise<string[]> {
+  if (!glbFiles?.length) return []
+  const { data: userData } = await supabase.auth.getUser()
+  const uid = userData?.user?.id
+  if (!uid) throw new Error('Not authenticated')
+
+  const publicUrls: string[] = []
+  for (const file of glbFiles) {
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'glb'
+    const safeName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')
+    const path = `${uid}/${Date.now()}-${Math.random().toString(36).slice(2)}-${safeName}`
+
+    const { error } = await supabase.storage
+      .from('glbs')
+      .upload(path, file, { contentType: file.type || `model/${ext}`, cacheControl: '3600', upsert: false })
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error('[Supabase] GLB upload failed:', error.message)
+      continue
+    }
+
+    const { data: pub } = supabase.storage.from('glbs').getPublicUrl(path)
+    const publicUrl = pub?.publicUrl || ''
+    if (!publicUrl) continue
+    publicUrls.push(publicUrl)
+
+    const insertRow: HomeInsert = { user_id: uid, name: file.name, path, public_url: publicUrl, size: file.size ?? null }
+    const { error: insErr } = await supabase.from('homes').insert(insertRow)
+    if (insErr) {
+      // eslint-disable-next-line no-console
+      console.error('[Supabase] homes insert failed:', insErr.message)
+    }
+  }
+
+  return publicUrls
+}
+
 // Project types (align with your Supabase schema)
 export type ProjectInsert = {
   name: string
@@ -171,4 +222,57 @@ export async function listUserProjects(): Promise<Project[]> {
     .limit(100)
   if (error) throw error
   return (data ?? []) as Project[]
+}
+
+// Backfill: For current user, scan glbs bucket at uid/ and ensure each file exists in homes.
+// Also create a basic public project per GLB if a project with the same name does not already exist.
+export async function backfillUserGlbsToHomesAndProjects(): Promise<{ homesInserted: number; projectsCreated: number }> {
+  const { data: userData } = await supabase.auth.getUser()
+  const uid = userData?.user?.id
+  if (!uid) throw new Error('Not authenticated')
+
+  const bucket = supabase.storage.from('glbs')
+  const { data: files, error: listErr } = await bucket.list(uid, { limit: 1000 })
+  if (listErr) throw listErr
+  const entries = files || []
+
+  let homesInserted = 0
+  let projectsCreated = 0
+
+  for (const f of entries) {
+    if (!f.name.toLowerCase().endsWith('.glb')) continue
+    const path = `${uid}/${f.name}`
+    const { data: pub } = bucket.getPublicUrl(path)
+    const publicUrl = pub?.publicUrl || ''
+    const name = f.name.replace(/\.[^/.]+$/, '')
+
+    const { data: existingHomes } = await supabase
+      .from('homes')
+      .select('id')
+      .eq('path', path)
+      .limit(1)
+    if (!existingHomes || existingHomes.length === 0) {
+      const insertRow: HomeInsert = { user_id: uid, name: f.name, path, public_url: publicUrl, size: (f as any).metadata?.size ?? null }
+      const { error: insErr } = await supabase.from('homes').insert(insertRow)
+      if (!insErr) homesInserted++
+    }
+
+    const { data: existingProjects } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('created_by', uid)
+      .eq('name', name)
+      .limit(1)
+    if (!existingProjects || existingProjects.length === 0) {
+      try {
+        await createProject({ name, image_urls: [], is_public: true })
+        projectsCreated++
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('[Supabase] createProject backfill failed:', (e as any)?.message || e)
+      }
+    }
+  }
+
+  return { homesInserted, projectsCreated }
 }

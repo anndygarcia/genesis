@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Plus, Instagram, Facebook, Youtube, Linkedin, Music2 } from 'lucide-react'
+import { Instagram, Facebook, Youtube, Linkedin, Music2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import GLBThumb from '../components/GLBThumb'
 
 function Profile() {
   const [loading, setLoading] = useState(true)
@@ -22,6 +23,10 @@ function Profile() {
   const [youtubeUrl, setYoutubeUrl] = useState('')
   const [linkedinUrl, setLinkedinUrl] = useState('')
   const [tiktokUrl, setTiktokUrl] = useState('')
+
+  // Homes state (user's uploaded GLBs)
+  const [homes, setHomes] = useState<Array<{ id: string; public_url: string }>>([])
+  const [homesLoading, setHomesLoading] = useState(true)
 
   const avatarPreview = useMemo(() => avatarUrl || '', [avatarUrl])
 
@@ -56,6 +61,31 @@ function Profile() {
         setError(e?.message || 'Failed to load profile')
       } finally {
         if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
+
+  // Load user's homes (GLBs) for the grid
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const { data: userData } = await supabase.auth.getUser()
+        const uid = userData?.user?.id
+        if (!uid) { if (mounted) setHomes([]); return }
+        const { data, error } = await supabase
+          .from('homes')
+          .select('id, public_url')
+          .eq('user_id', uid)
+          .not('public_url', 'is', null)
+          .order('created_at', { ascending: false })
+        if (error) throw error
+        if (mounted) setHomes((data as any[])?.map((h) => ({ id: h.id, public_url: h.public_url })) || [])
+      } catch {
+        if (mounted) setHomes([])
+      } finally {
+        if (mounted) setHomesLoading(false)
       }
     })()
     return () => { mounted = false }
@@ -247,28 +277,30 @@ function Profile() {
         </div>
       </div>
 
-      {/* Projects grid */}
+      {/* Homes grid (user's uploaded GLBs) */}
       <div className="mt-8">
-        <h2 className="text-lg font-medium text-white mb-3">Projects</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => (
-            <NavLink
-              key={i}
-              to="/projects/new"
-              aria-label="Create new project"
-              className="group relative aspect-square rounded-xl border border-white/10 bg-neutral-900/60 text-neutral-500 transform-gpu transition-transform duration-300 ease-out hover:scale-105 overflow-hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef]"
-            >
-              <span className="absolute inset-0 grid place-items-center transition-opacity duration-300 ease-out group-hover:opacity-0">
-                Coming soon
-              </span>
-              <span className="absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100">
-                <Plus className="h-10 w-10 text-neutral-300" />
-              </span>
-            </NavLink>
-          ))}
-        </div>
+        <h2 className="text-lg font-medium text-white mb-3">My Homes</h2>
+        {homesLoading ? (
+          <div className="text-neutral-400">Loading homes…</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {homes.map((h) => (
+              <NavLink
+                key={h.id}
+                to={`/viewer-upload?glb=${encodeURIComponent(h.public_url)}`}
+                className="group relative aspect-square rounded-xl border border-white/10 bg-neutral-900/60 overflow-hidden transform-gpu transition-transform duration-300 ease-out hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#a588ef]"
+                aria-label="Open in viewer"
+              >
+                <div className="absolute inset-0">
+                  <GLBThumb url={h.public_url} className="w-full h-full" />
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              </NavLink>
+            ))}
+          </div>
+        )}
         {!userId && (
-          <p className="mt-4 text-sm text-neutral-400">Sign in to see and manage your projects.</p>
+          <p className="mt-4 text-sm text-neutral-400">Sign in to see your homes.</p>
         )}
       </div>
     </div>

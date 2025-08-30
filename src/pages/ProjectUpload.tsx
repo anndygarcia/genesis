@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createProject, uploadReferenceImages } from '../lib/supabase'
+import { createProject, uploadReferenceImages, uploadGlbsAndInsertHomes } from '../lib/supabase'
 
 export default function ProjectUpload() {
   const [dragging, setDragging] = useState(false)
@@ -34,6 +34,7 @@ export default function ProjectUpload() {
   function onSelectFiles(list: FileList | null) {
     if (!list || list.length === 0) return
     const next = Array.from(list)
+      .filter((f) => f.type.startsWith('image/') || /\.glb$/i.test(f.name))
     setFiles((prev) => [...prev, ...next])
   }
 
@@ -60,8 +61,14 @@ export default function ProjectUpload() {
   async function onSubmit() {
     try {
       setSaving(true)
-      // 1) Upload files (optional)
-      const imageUrls = files.length ? await uploadReferenceImages(files) : []
+      // 1) Separate and upload files
+      const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+      const glbFiles = files.filter((f) => !f.type.startsWith('image/') && /\.glb$/i.test(f.name))
+      const imageUrls = imageFiles.length ? await uploadReferenceImages(imageFiles) : []
+      // Upload GLBs to public bucket and insert into homes (global visibility)
+      if (glbFiles.length) {
+        await uploadGlbsAndInsertHomes(glbFiles)
+      }
       // 2) Create project row
       const fallbackName = files[0]?.name?.replace(/\.[^/.]+$/, '') || 'Untitled Project'
       await createProject({
@@ -161,12 +168,18 @@ export default function ProjectUpload() {
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragEnter={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={(e) => { e.preventDefault(); setDragging(false) }}
-        onDrop={(e) => { e.preventDefault(); setDragging(false); onSelectFiles(e.dataTransfer.files) }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (!e.dataTransfer?.files) return
+          const allowed = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/') || /\.glb$/i.test(f.name))
+          setFiles((prev) => [...prev, ...allowed])
+        }}
       >
         <p className="text-neutral-300">Drag and drop files here</p>
         <p className="text-neutral-500 text-sm">or</p>
         <label className="inline-flex items-center gap-2 rounded-md px-3 py-2 btn-accent cursor-pointer mt-2 transform-gpu transition-transform duration-300 ease-out hover:scale-105">
-          <input type="file" multiple className="sr-only" onChange={(e) => onSelectFiles(e.target.files)} />
+          <input type="file" multiple accept="image/*,.glb" className="sr-only" onChange={(e) => onSelectFiles(e.target.files)} />
           <span>Choose files</span>
         </label>
         {files.length > 0 && (

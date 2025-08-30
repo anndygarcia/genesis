@@ -5,50 +5,12 @@ import * as THREE from 'three'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import LogoSpinner from '../components/LogoSpinner'
+import { GLBThumb as SharedGLBThumb } from '../components/GLBThumb'
 
 // Minimal GLB loader + auto-frame (duplicated here so we don't depend on Viewer.tsx internals)
 type GLBHandle = { frame: () => void }
 type BoundsInfo = { size: THREE.Vector3; center: THREE.Vector3; floorY: number }
 type Home = { id: string; name: string; public_url: string; size?: number; created_at?: string; path?: string }
-
-// Tiny GLB preview thumbnail used in the Homes library list
-// Enlarged and framed closer for better visibility
-function GLBThumb({ url, width = 200, height = 140 }: { url: string; width?: number; height?: number }) {
-  return (
-    <div style={{ width, height }} className="bg-neutral-800">
-      <Canvas
-        orthographic={false}
-        frameloop="demand"
-        dpr={[1, 1]}
-        shadows={false}
-        gl={{
-          antialias: false,
-          powerPreference: 'low-power',
-          alpha: true,
-          preserveDrawingBuffer: false,
-          outputColorSpace: THREE.SRGBColorSpace,
-          toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.4,
-        }}
-        camera={{ position: [0.6, 0.9, 2.2], fov: 38, near: 0.05, far: 1000 }}
-        style={{ width, height }}
-        onCreated={({ gl }) => {
-          const isWebGL2 = (gl as any).getParameter?.((gl as any).VERSION)?.includes('WebGL 2')
-          console.info('[GLBThumb] Canvas created', { webgl2: !!isWebGL2 })
-        }}
-      >
-        <color attach="background" args={[0x1a1a1a]} />
-        <ambientLight intensity={1.4} />
-        <hemisphereLight args={[0xffffff, 0x666666, 0.9]} />
-        <directionalLight position={[2, 3, 2]} intensity={1.2} />
-        <directionalLight position={[-3, 2, 1]} intensity={0.7} />
-        <Suspense fallback={null}>
-          <ThumbModel url={url} />
-        </Suspense>
-      </Canvas>
-    </div>
-  )
-}
 
 function CenteredCanvasSpinner() {
   const { active } = useProgress()
@@ -62,61 +24,7 @@ function CenteredCanvasSpinner() {
   )
 }
 
-function ThumbModel({ url }: { url: string }) {
-  const { scene } = useGLTF(url, true)
-  const { camera, invalidate } = useThree()
-  const cloned = useMemo(() => scene.clone(true), [scene])
-
-  useEffect(() => {
-    // Frame once loaded
-    const box = new THREE.Box3().setFromObject(cloned)
-    const size = new THREE.Vector3()
-    const center = new THREE.Vector3()
-    box.getSize(size)
-    box.getCenter(center)
-    const maxDim = Math.max(size.x, size.y, size.z)
-    if (maxDim > 0) {
-      const scale = 2 / maxDim // scale to a manageable size
-      cloned.scale.setScalar(scale)
-      const sBox = new THREE.Box3().setFromObject(cloned)
-      sBox.getSize(size)
-      sBox.getCenter(center)
-    }
-    // center
-    cloned.position.sub(center)
-
-    // Normalize materials so thumbnails aren't too dark/transparent
-    cloned.traverse((obj) => {
-      const m = obj as THREE.Mesh
-      if ((m as any).isMesh) {
-        const mat: any = m.material
-        if (Array.isArray(mat)) {
-          mat.forEach((mm: any) => {
-            mm.side = THREE.DoubleSide
-            if (mm.transparent && mm.opacity < 0.2) { mm.transparent = false; mm.opacity = 1 }
-            if (!mm.map && mm.color && mm.color.r < 0.02 && mm.color.g < 0.02 && mm.color.b < 0.02) {
-              mm.color = new THREE.Color('#bfbfbf')
-            }
-          })
-        } else if (mat) {
-          mat.side = THREE.DoubleSide
-          if (mat.transparent && mat.opacity < 0.2) { mat.transparent = false; mat.opacity = 1 }
-          if (!mat.map && mat.color && mat.color.r < 0.02 && mat.color.g < 0.02 && mat.color.b < 0.02) {
-            mat.color = new THREE.Color('#bfbfbf')
-          }
-        }
-      }
-    })
-    // position camera
-    const dist = Math.max(size.x, size.y, size.z) * 0.9 + 0.8 // closer
-    camera.position.set(0.9, 0.9, dist)
-    camera.lookAt(0, 0, 0)
-    camera.updateProjectionMatrix()
-    invalidate() // render once
-  }, [cloned, camera, invalidate])
-
-  return <primitive object={cloned} />
-}
+// Note: we now reuse the shared GLBThumb which already has an ErrorBoundary
 
 const GLBModel = forwardRef<GLBHandle, { url: string; onBounds?: (info: BoundsInfo) => void }>(function GLBModel({ url, onBounds }, ref) {
   const { scene } = useGLTF(url, true)
@@ -280,11 +188,33 @@ export default function ViewerUpload() {
     }
   }, [localUrl])
 
-  // Load GLB from query param if provided
+  // Load GLB from query param and respond to changes when navigating from Feed
   useEffect(() => {
     const raw = searchParams.get('glb')
-    const url = raw ? decodeURIComponent(raw) : null
-    if (url) setLocalUrl(url)
+    const url = raw ? decodeURIComponent(raw) : ''
+    if (url && url !== localUrl) {
+      setLocalUrl(url)
+      // After setting, give the model a moment to mount then frame it
+      setTimeout(() => glbRef.current?.frame(), 300)
+    }
+    // If query removed, don't forcibly clear localUrl to avoid blanking the viewer mid-session
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  // Extra safety: on first mount, also read from window.location if needed
+  useEffect(() => {
+    if (localUrl) return
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const raw = params.get('glb')
+      const url = raw ? decodeURIComponent(raw) : ''
+      if (url) {
+        console.info('[ViewerUpload] Loaded glb from window.location', url)
+        setLocalUrl(url)
+        setTimeout(() => glbRef.current?.frame(), 300)
+      }
+    } catch {}
+    // only once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -473,7 +403,6 @@ export default function ViewerUpload() {
 
       {/* Viewer Canvas */}
       <Canvas
-        key={localUrl || 'empty'}
         shadows
         dpr={[1, 2]}
         style={{ width: '100%', height: '100%', display: 'block' }}
@@ -508,7 +437,7 @@ export default function ViewerUpload() {
 
       {/* Homes Library Panel */}
       {showLibrary && (
-        <div className="absolute left-2 top-16 bottom-2 w-[360px] z-30 rounded-lg border border-white/10 bg-neutral-900/70 backdrop-blur-md p-3 overflow-y-auto">
+        <div className="absolute left-2 top-16 bottom-2 w-[360px] z-30 rounded-lg border border-white/10 bg-neutral-900/70 backdrop-blur-md p-3 overflow-y-auto overflow-x-hidden">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold text-white">Homes</h3>
             <button
@@ -527,25 +456,25 @@ export default function ViewerUpload() {
           ) : homes.length === 0 ? (
             <div className="text-sm text-neutral-400">No homes yet. Upload a GLB to add it.</div>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {homes.map((h) => (
-                <li key={h.id} className="rounded-md border border-white/10 bg-neutral-900/60 p-2">
-                  <div className="flex items-start gap-2">
-                    <div className="shrink-0 rounded-md overflow-hidden border border-white/10 bg-neutral-800">
-                      <GLBThumb url={h.public_url} />
-                    </div>
+                <li key={h.id} className="rounded-lg border border-white/10 bg-neutral-900/70 p-2">
+                  {/* Thumbnail */}
+                  <div className="rounded-md overflow-hidden border border-white/10 bg-neutral-800 w-full h-[120px]">
+                    <SharedGLBThumb url={h.public_url} className="w-full h-full" lazy />
+                  </div>
+                  {/* Footer row */}
+                  <div className="mt-2 flex items-center gap-2">
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm text-white truncate">{h.name}</div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <button
-                          className="rounded-md border border-[#a588ef]/40 bg-[#7f63d6]/60 px-4 py-2 text-sm text-white hover:bg-[#7f63d6]/70 ring-1 ring-[#a588ef]/20 shadow-[0_0_10px_rgba(165,136,239,0.35)]"
-                          onClick={() => {
-                            setLocalUrl(h.public_url)
-                            setTimeout(() => glbRef.current?.frame(), 300)
-                          }}
-                        >Open</button>
-                      </div>
+                      <div className="text-xs text-neutral-300 truncate">{h.name}</div>
                     </div>
+                    <button
+                      className="rounded-md border border-[#a588ef]/40 bg-[#7f63d6]/60 px-3 py-1.5 text-sm text-white hover:bg-[#7f63d6]/70 ring-1 ring-[#a588ef]/20 shadow-[0_0_10px_rgba(165,136,239,0.35)]"
+                      onClick={() => {
+                        setLocalUrl(h.public_url)
+                        setTimeout(() => glbRef.current?.frame(), 300)
+                      }}
+                    >Open</button>
                   </div>
                 </li>
               ))}
