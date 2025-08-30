@@ -333,20 +333,17 @@ export default function ViewerUpload() {
             </button>
             <div className="h-5 w-px bg-white/10 self-stretch" />
             <button
-              className="relative px-3 py-1 rounded-r-md transition shadow bg-transparent text-neutral-300 shadow-[inset_0_0_6px_rgba(0,0,0,0.5)] pointer-events-none opacity-60"
-              aria-disabled
+              className={`px-3 py-1 rounded-r-md transition shadow ${
+                !orbit
+                  ? 'bg-neutral-800 text-white ring-1 ring-[#a588ef]/25 shadow-[0_0_12px_rgba(165,136,239,0.35)]'
+                  : 'bg-transparent text-neutral-300 shadow-[inset_0_0_6px_rgba(0,0,0,0.5)]'
+              }`}
+              onMouseDown={(e) => { e.stopPropagation() }}
+              onClick={(e) => { e.stopPropagation(); setOrbit(false) }}
             >
               POV
-              {/* Purple X overlay confined to POV button */}
-              <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                <span className="relative block w-6 h-6">
-                  <span className="absolute left-1/2 top-0 -translate-x-1/2 h-6 w-[2px] bg-[#a588ef] rotate-45" />
-                  <span className="absolute left-1/2 top-0 -translate-x-1/2 h-6 w-[2px] bg-[#a588ef] -rotate-45" />
-                </span>
-              </span>
             </button>
           </div>
-          <span className="mt-1 text-[10px] text-[#a588ef]">coming soon</span>
         </div>
         {localUrl && (
           <>
@@ -428,6 +425,8 @@ export default function ViewerUpload() {
           ) : null}
         </Suspense>
 
+        {/* Ensure correct eye height when entering POV */}
+        <POVEnterAdjuster orbit={orbit} eyeY={floorY + floorOffset + 1.6} />
         {orbit ? <OrbitControls enableDamping dampingFactor={0.08} /> : <PointerLockControls />}
         {!orbit && <FPSController speed={speed} sprint={Math.max(6, speed * 2)} />}
         {!orbit && <FloorPicker enabled onPick={(y) => setFloorY(Math.round(y * 1000) / 1000)} />}
@@ -499,6 +498,21 @@ export default function ViewerUpload() {
       )}
     </div>
   )
+}
+
+// Adjust camera eye height on entering POV mode
+function POVEnterAdjuster({ orbit, eyeY }: { orbit: boolean; eyeY: number }) {
+  const { camera } = useThree()
+  const prevOrbit = useRef<boolean>(true)
+  useEffect(() => {
+    // Transition: orbit -> POV
+    if (prevOrbit.current && !orbit) {
+      camera.position.y = eyeY
+      camera.updateProjectionMatrix()
+    }
+    prevOrbit.current = orbit
+  }, [orbit, eyeY, camera])
+  return null
 }
 
 // WASD + Shift sprint first-person movement on the horizontal plane
