@@ -147,6 +147,25 @@ export default function Viewer() {
   const url = params.get('url') || ''
   const debugOrbit = params.get('orbit') === '1'
   const raw = params.get('raw') === '1'
+  const supportsPointerLock = useMemo(() => {
+    if (typeof document === 'undefined' || typeof HTMLCanvasElement === 'undefined') return false
+    if (typeof HTMLCanvasElement.prototype.requestPointerLock !== 'function') return false
+    const policy = (document as Document & {
+      permissionsPolicy?: { allowsFeature?: (feature: string) => boolean }
+      featurePolicy?: { allowsFeature?: (feature: string) => boolean }
+    }).permissionsPolicy ?? (document as Document & {
+      permissionsPolicy?: { allowsFeature?: (feature: string) => boolean }
+      featurePolicy?: { allowsFeature?: (feature: string) => boolean }
+    }).featurePolicy
+    if (policy?.allowsFeature) {
+      try {
+        return policy.allowsFeature('pointer-lock')
+      } catch {
+        return false
+      }
+    }
+    return true
+  }, [])
   const glbRef = useRef<GLBHandle>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
@@ -280,7 +299,7 @@ export default function Viewer() {
         </Suspense>
 
         <FPSController />
-        {debugOrbit ? <OrbitControls enableDamping dampingFactor={0.08} /> : <PointerLockControls selector="#enter-fps" />}
+        {debugOrbit || !supportsPointerLock ? <OrbitControls enableDamping dampingFactor={0.08} /> : <PointerLockControls selector="#enter-fps" />}
         <StatsGl className="!fixed !left-2 !top-20" />
       </Canvas>
       </ShadowHost>
@@ -316,7 +335,7 @@ export default function Viewer() {
           </mesh>
           <gridHelper args={[200, 200, '#888', '#444']} position={[0, 0.001, 0]} />
           {url ? <GLBModel ref={glbRef} url={url} /> : null}
-          {debugOrbit ? <OrbitControls enableDamping dampingFactor={0.08} /> : <PointerLockControls selector="#enter-fps" />}
+          {debugOrbit || !supportsPointerLock ? <OrbitControls enableDamping dampingFactor={0.08} /> : <PointerLockControls selector="#enter-fps" />}
           <StatsGl className="!fixed !left-2 !top-20" />
         </Canvas>
       ) : null}

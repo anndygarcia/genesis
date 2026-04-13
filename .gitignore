@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+genesis/
+home-designer/
 
 # Editor directories and files
 .vscode/*

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import { NavLink, Route, Routes, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import MetalInteractiveInline from './components/MetalInteractiveInline'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from './lib/supabase'
@@ -12,14 +12,26 @@ import Profile from './pages/Profile'
 import ProfileSettings from './pages/ProfileSettings'
 import Projects from './pages/Projects'
 import Settings from './pages/Settings'
-import ProjectUpload from './pages/ProjectUpload'
+ 
 import Feed from './pages/Feed'
-import Viewer from './pages/Viewer'
 import ViewerTest from './pages/ViewerTest'
+import Homes from './pages/Homes'
 import ViewerUpload from './pages/ViewerUpload'
+import CreateStudio from './pages/CreateStudio'
+
+function LegacyViewerRedirect() {
+  const location = useLocation()
+  return <Navigate to={`/viewer-upload${location.search || ''}`} replace />
+}
 
 function App() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const hideShellHeader = (() => {
+    if (location.pathname !== '/viewer-upload') return false
+    if (new URLSearchParams(location.search).has('parent')) return true
+    try { return window.self !== window.top } catch { return true }
+  })()
   useEffect(() => {
     const root = document.documentElement
     root.classList.add('dark')
@@ -29,6 +41,7 @@ function App() {
   // Smooth modal mount/unmount with exit animation
   const [authVisible, setAuthVisible] = useState(false)
   const [authClosing, setAuthClosing] = useState(false)
+  const authRedirectTo = useRef<string | null>(null)
   const closeTimer = useRef<number | null>(null)
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn')
   const [user, setUser] = useState<User | null>(null)
@@ -50,6 +63,28 @@ function App() {
   const menuRef = useRef<HTMLDivElement | null>(null)
   // Hover close delay to prevent flicker when moving from trigger to menu
   const hoverCloseTimeout = useRef<number | null>(null)
+
+  const isProtectedPath = (pathname: string) => {
+    const protectedPrefixes = [
+      '/start',
+      '/viewer-upload',
+      '/viewer',
+      '/viewer-test',
+      '/projects',
+      '/profile',
+      '/settings',
+      '/preview',
+      '/homes',
+      '/homes-embed',
+    ]
+    return protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  }
+
+  const promptLoginFor = (targetPath: string, nextMode: 'signIn' | 'signUp' = 'signIn') => {
+    authRedirectTo.current = targetPath
+    setMode(nextMode)
+    setAuthOpen(true)
+  }
 
   // Close on ESC
   useEffect(() => {
@@ -103,7 +138,9 @@ function App() {
       console.log('[AUTH] onAuthStateChange', event, 'user=', session?.user?.id || null)
       // Only redirect after an actual sign-in; do not redirect on USER_UPDATED, TOKEN_REFRESHED, etc.
       if (event === 'SIGNED_IN' && session?.user) {
-        navigate('/', { replace: true })
+        const target = authRedirectTo.current || '/'
+        authRedirectTo.current = null
+        navigate(target, { replace: true })
       }
     })
     return () => {
@@ -140,6 +177,42 @@ function App() {
   }, [authOpen, authVisible, authClosing])
 
   useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current) }, [])
+
+  // Guard: only at top-level window, if something navigates the HOST to /homes or /homes-embed,
+  // redirect back to the viewer with the homes modal open. Allow /homes-embed inside iframe.
+  useEffect(() => {
+    try {
+      // Skip if we are running inside an iframe (modal iframe has its own router)
+      if (typeof window !== 'undefined' && window.self !== window.top) return
+    } catch { /* cross-origin safety */ }
+    if (location.pathname === '/homes' || location.pathname === '/homes-embed') {
+      navigate('/viewer-upload?open=homes', { replace: true })
+    }
+  }, [location, navigate])
+
+  useEffect(() => {
+    if (!user && isProtectedPath(location.pathname)) {
+      const target = `${location.pathname}${location.search}`
+      if (authRedirectTo.current !== target) {
+        authRedirectTo.current = target
+      }
+      setMode('signIn')
+      setAuthOpen(true)
+      if (location.pathname !== '/') {
+        navigate('/', { replace: true })
+      }
+    }
+  }, [location.pathname, location.search, navigate, user])
+
+  useEffect(() => {
+    if (!user && location.pathname === '/') {
+      if (!authRedirectTo.current) {
+        authRedirectTo.current = '/'
+      }
+      setMode('signIn')
+      setAuthOpen(true)
+    }
+  }, [location.pathname, user])
 
   // Interactive metal panel
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -324,6 +397,7 @@ function App() {
 
   return (
     <div className="min-h-full flex flex-col texture-concrete-dark">
+      {hideShellHeader ? null : (
       <header className="border-b border-white/10 bg-neutral-950/60 backdrop-blur-xl sticky top-0 z-10">
         <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           {/* Centered brand text logo (perfectly centered) */}
@@ -351,14 +425,24 @@ function App() {
             </MetalInteractiveInline>
           </NavLink>
           <nav className="flex items-center gap-6 text-sm">
-            <NavLink to="/" className={({isActive}) => `hover:text-[#a588ef] ${isActive ? 'text-[#a588ef]' : 'text-neutral-200'}`}>Home</NavLink>
+            <NavLink
+              to="/"
+              onClick={(e) => {
+                if (!user) {
+                  e.preventDefault()
+                  promptLoginFor('/')
+                }
+              }}
+              className={({isActive}) => `hover:text-[#a588ef] ${isActive ? 'text-[#a588ef]' : 'text-neutral-200'}`}
+            >
+              Home
+            </NavLink>
             <NavLink
               to="/start"
               onClick={(e) => {
                 if (!user) {
                   e.preventDefault()
-                  setMode('signIn')
-                  setAuthOpen(true)
+                  promptLoginFor('/start')
                 }
               }}
               className={({isActive}) => `hover:text-[#a588ef] ${isActive ? 'text-[#a588ef]' : 'text-neutral-200'}`}
@@ -370,8 +454,7 @@ function App() {
               onClick={(e) => {
                 if (!user) {
                   e.preventDefault()
-                  setMode('signIn')
-                  setAuthOpen(true)
+                  promptLoginFor('/viewer-upload')
                 }
               }}
               className={({isActive}) => `hover:text-[#a588ef] ${isActive ? 'text-[#a588ef]' : 'text-neutral-200'}`}
@@ -538,6 +621,7 @@ function App() {
           </nav>
         </div>
       </header>
+      )}
 
       <main className="flex-1">
         <Routes>
@@ -547,57 +631,31 @@ function App() {
               user ? (
                 <Feed />
               ) : (
-                <Landing onStart={() => { setMode('signUp'); setAuthOpen(true) }} />
+                <Landing
+                  onStart={() => { setMode('signUp'); setAuthOpen(true) }}
+                  onExploreViewer={() => promptLoginFor('/viewer-upload')}
+                />
               )
             }
           />
           <Route
             path="/start"
-            element={
-              user ? (
-                <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-                  <div className="rounded-2xl border border-white/10 bg-neutral-900/60 p-10 text-center shadow-xl">
-                    <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Create — Coming Soon</h1>
-                    <p className="mt-3 text-neutral-400 max-w-2xl mx-auto">
-                      We’re putting the finishing touches on our creation flow. Check back soon, or try the 3D Viewer in the meantime.
-                    </p>
-                    <div className="mt-8 flex items-center justify-center gap-3">
-                      <NavLink
-                        to="/viewer-upload?open=homes"
-                        className="inline-flex items-center gap-2 rounded-md btn-accent px-4 py-2 text-white shadow transform-gpu transition-transform duration-300 ease-out hover:scale-105 active:scale-100"
-                      >
-                        Open Viewer
-                      </NavLink>
-                      <NavLink
-                        to="/"
-                        className="inline-flex items-center gap-2 rounded-md border border-white/10 px-4 py-2 text-neutral-200 hover:bg-white/10"
-                      >
-                        Back to Home
-                      </NavLink>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <Landing onStart={() => { setMode('signUp'); setAuthOpen(true) }} />
-              )
-            }
+            element={<CreateStudio />}
           />
           <Route path="/preview" element={<Preview />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/settings" element={<ProfileSettings />} />
           <Route path="/projects" element={<Projects />} />
-          <Route path="/projects/new" element={<ProjectUpload />} />
+          <Route path="/projects/new" element={<ViewerUpload />} />
           <Route path="/settings" element={<Settings />} />
-          <Route path="/viewer" element={<Viewer />} />
+          <Route path="/viewer" element={<LegacyViewerRedirect />} />
+          {/* Internal-only embed route for the Homes modal iframe */}
+          <Route path="/homes-embed" element={<Homes />} />
+          {/* Hard redirect for any accidental navigations to /homes */}
+          <Route path="/homes" element={<Navigate to="/viewer-upload?open=homes" replace />} />
           <Route
             path="/viewer-upload"
-            element={
-              user ? (
-                <ViewerUpload />
-              ) : (
-                <Landing onStart={() => { setMode('signUp'); setAuthOpen(true) }} />
-              )
-            }
+            element={<ViewerUpload />}
           />
           <Route path="/viewer-test" element={<ViewerTest />} />
         </Routes>
@@ -842,9 +900,11 @@ function App() {
         </div>
       )}
 
-      <footer className="border-t border-white/10 py-6 text-center text-sm text-neutral-400">
-        {new Date().getFullYear()} Genesis AI. All rights reserved.
-      </footer>
+      {location.pathname.startsWith('/viewer') ? null : (
+        <footer className="border-t border-white/10 py-6 text-center text-sm text-neutral-400">
+          {new Date().getFullYear()} Genesis AI. All rights reserved.
+        </footer>
+      )}
     </div>
   )
 }
