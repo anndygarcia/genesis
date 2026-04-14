@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Box3, Group, Vector3 } from "three";
+import { Box3, Group } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 export function GLTFSafe({ url, onError, onLoaded }: { url: string; onError?: (e: any) => void; onLoaded?: (info: { scene: Group; bounds: { min: [number,number,number]; max: [number,number,number] } }) => void }) {
@@ -18,9 +18,6 @@ export function GLTFSafe({ url, onError, onLoaded }: { url: string; onError?: (e
         if (!mounted) return;
         // Compute bounds
         const box = new Box3().setFromObject(gltf.scene);
-        const min = new Vector3();
-        const max = new Vector3();
-        box.getSize(max); // We'll compute min/max directly from box
         const bmin = box.min; const bmax = box.max;
         setScene(gltf.scene);
         onLoaded?.({ scene: gltf.scene, bounds: { min: [bmin.x, bmin.y, bmin.z], max: [bmax.x, bmax.y, bmax.z] } });

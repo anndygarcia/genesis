@@ -202,7 +202,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     });
   },
   reset: () => {
-    const s = get();
     pushPast(set, get);
     set({ points: defaultPoints, wallHeight: 3, wallThickness: 0.2, entities: [], openings: {} });
   }
