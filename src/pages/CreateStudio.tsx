@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Environment, OrbitControls, PointerLockControls, TransformControls } from '@react-three/drei'
+import { Environment, Html, OrbitControls, PointerLockControls, TransformControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { useNavigate } from 'react-router-dom'
 import { Box, BrickWall, Copy, Crosshair, DoorOpen, Eye, Grid2x2, GripHorizontal, GripVertical, Maximize2, Move, PanelTop, Redo2, RotateCw, Save, Sparkles, Trash2, Undo2, Upload } from 'lucide-react'
 import AIChatPanel from '../components/AIChatPanel'
+import GenesisBriefPanel from '../components/GenesisBriefPanel'
 import { summarizeToolCall, toolCallToObjects } from '../lib/ai-tools'
+import { toast } from '../components/Toast'
 
 type PrimitiveKind = 'box' | 'wall' | 'door' | 'window'
 type TransformMode = 'translate' | 'rotate' | 'scale'
@@ -106,6 +108,14 @@ const BOX_CORNERS: Array<[number, number, number]> = [
   [0.5, 0.5, 0.5],
 ]
 
+type CornerScaleDragState = {
+  objectId: string
+  cornerIndex: number
+  startX: number
+  startY: number
+  startScale: [number, number, number]
+}
+
 type ToolIconButtonProps = {
   label: string
   icon: ReactNode
@@ -180,6 +190,132 @@ function ToolbarGroup({ title, orientation, children, showTitle = true }: Toolba
   )
 }
 
+function ToolbarSeparator({ orientation }: { orientation: 'vertical' | 'horizontal' }) {
+  const isHorizontal = orientation === 'horizontal'
+  return (
+    <div
+      aria-hidden
+      className={isHorizontal
+        ? 'mx-1 h-8 w-px shrink-0 self-center bg-white/8'
+        : 'my-1 h-px w-8 shrink-0 bg-white/8'}
+    />
+  )
+}
+
+type SelectedObjectToolbarProps = {
+  object: THREE.Mesh
+  mode: TransformMode
+  snapEnabled: boolean
+  onSetMode: (mode: TransformMode) => void
+  onToggleSnap: () => void
+  onDuplicate: () => void
+  onDelete: () => void
+  disabled?: boolean
+}
+
+function SelectedObjectToolbar({ object, mode, snapEnabled, onSetMode, onToggleSnap, onDuplicate, onDelete, disabled = false }: SelectedObjectToolbarProps) {
+  const box = useMemo(() => new THREE.Box3(), [])
+  const size = useMemo(() => new THREE.Vector3(), [])
+  const center = useMemo(() => new THREE.Vector3(), [])
+  const anchor = useMemo(() => new THREE.Vector3(), [])
+  const [position, setPosition] = useState<[number, number, number]>([0, 0, 0])
+  const modeHint = mode === 'translate' ? 'Drag to move' : mode === 'rotate' ? 'Drag to rotate' : 'Drag corners to scale'
+
+  useFrame(() => {
+    box.setFromObject(object)
+    box.getSize(size)
+    box.getCenter(center)
+    anchor.set(center.x, box.max.y + Math.max(0.35, size.y * 0.18), center.z)
+    setPosition((prev) => {
+      if (Math.abs(prev[0] - anchor.x) < 0.01 && Math.abs(prev[1] - anchor.y) < 0.01 && Math.abs(prev[2] - anchor.z) < 0.01) {
+        return prev
+      }
+      return [anchor.x, anchor.y, anchor.z]
+    })
+  })
+
+  if (disabled) return null
+
+  return (
+    <Html position={position} center distanceFactor={12} style={{ pointerEvents: 'auto' }}>
+      <div
+        className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/10 bg-neutral-950/82 px-1.5 py-1 shadow-[0_18px_48px_-20px_rgba(0,0,0,0.9)] backdrop-blur-xl"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mr-0.5 hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.22em] text-neutral-400 sm:flex">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#a588ef] shadow-[0_0_0_3px_rgba(165,136,239,0.14)]" />
+          Selected
+        </div>
+        <div className="hidden max-w-[10rem] items-center rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] text-neutral-300 md:flex">
+          <span className="truncate">{modeHint}</span>
+        </div>
+        <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+          <button
+            type="button"
+            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${mode === 'translate' ? 'bg-[#a588ef] text-white' : 'text-neutral-300 hover:bg-white/8 hover:text-white'}`}
+            onClick={() => onSetMode('translate')}
+            title="Move"
+            aria-label="Move"
+          >
+            <Move className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${mode === 'rotate' ? 'bg-[#a588ef] text-white' : 'text-neutral-300 hover:bg-white/8 hover:text-white'}`}
+            onClick={() => onSetMode('rotate')}
+            title="Rotate"
+            aria-label="Rotate"
+          >
+            <RotateCw className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${mode === 'scale' ? 'bg-[#a588ef] text-white' : 'text-neutral-300 hover:bg-white/8 hover:text-white'}`}
+            onClick={() => onSetMode('scale')}
+            title="Scale"
+            aria-label="Scale"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="mx-0.5 hidden h-5 w-px bg-white/10 md:block" />
+        <button
+          type="button"
+          className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${snapEnabled ? 'bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/20' : 'text-neutral-300 hover:bg-white/8 hover:text-white'}`}
+          onClick={onToggleSnap}
+          title="Snap"
+          aria-label="Snap"
+        >
+          <Crosshair className="h-3.5 w-3.5" />
+        </button>
+        <div className="mx-0.5 hidden h-5 w-px bg-white/10 md:block" />
+        <button
+          type="button"
+          className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-300 transition-colors hover:bg-white/8 hover:text-white"
+          onClick={onDuplicate}
+          title="Duplicate"
+          aria-label="Duplicate"
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          className="flex h-7 w-7 items-center justify-center rounded-full text-red-200 transition-colors hover:bg-red-500/15 hover:text-red-100"
+          onClick={onDelete}
+          title="Delete"
+          aria-label="Delete"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </Html>
+  )
+}
+
 export default function CreateStudio() {
   const navigate = useNavigate()
   const [objects, setObjects] = useState<StudioObject[]>(() => [defaultObject('box')])
@@ -191,6 +327,7 @@ export default function CreateStudio() {
   const [showGrid, setShowGrid] = useState(true)
   const [isTransformDragging, setIsTransformDragging] = useState(false)
   const [hoveredCorner, setHoveredCorner] = useState<string | null>(null)
+  const [activeCornerKey, setActiveCornerKey] = useState<string | null>(null)
   const [toolbarDock, setToolbarDock] = useState<ToolbarDock>('left')
   const [isToolbarDragging, setIsToolbarDragging] = useState(false)
   const [toolbarPreviewDock, setToolbarPreviewDock] = useState<ToolbarDock | null>(null)
@@ -206,6 +343,7 @@ export default function CreateStudio() {
   const toolbarShellRef = useRef<HTMLDivElement | null>(null)
   const toolbarDragActiveRef = useRef(false)
   const toolbarDragOffsetRef = useRef({ x: 0, y: 0 })
+  const cornerScaleDragRef = useRef<CornerScaleDragState | null>(null)
   const meshRefs = useRef<Record<string, THREE.Mesh | null>>({})
   const objectsRef = useRef<StudioObject[]>(objects)
   const selectedIdRef = useRef<string | null>(selectedId)
@@ -352,6 +490,11 @@ export default function CreateStudio() {
       setShowGrid(parsed.showGrid !== false)
       setLastSavedAt(parsed.updatedAt || '')
       setStatus('Draft restored')
+      // If a brief is present, this draft came from the pipeline
+      if (localStorage.getItem('genesis_architect_brief_v1')) {
+        const nObjects = parsed.objects.length
+        toast.success(`Floor plan loaded! ${nObjects} objects ready for editing.`)
+      }
     } catch {
       setStatus('Failed to restore draft')
     }
@@ -501,6 +644,66 @@ export default function CreateStudio() {
     updateSelected({ scale: next })
   }, [selected, updateSelected])
 
+  const beginCornerScaleDrag = useCallback((object: StudioObject, cornerIndex: number, clientX: number, clientY: number) => {
+    pushHistory()
+    setSelectedId(object.id)
+    setTransformMode('scale')
+    const nextScale = [...object.scale] as [number, number, number]
+    cornerScaleDragRef.current = {
+      objectId: object.id,
+      cornerIndex,
+      startX: clientX,
+      startY: clientY,
+      startScale: nextScale,
+    }
+    setActiveCornerKey(`${object.id}:${cornerIndex}`)
+  }, [pushHistory])
+
+  useEffect(() => {
+    const stopCornerScaleDrag = () => {
+      if (!cornerScaleDragRef.current) return
+      cornerScaleDragRef.current = null
+      setActiveCornerKey(null)
+    }
+
+    const onPointerMove = (event: PointerEvent) => {
+      const drag = cornerScaleDragRef.current
+      if (!drag) return
+      event.preventDefault()
+
+      const corner = BOX_CORNERS[drag.cornerIndex]
+      const signX = corner[0] >= 0 ? 1 : -1
+      const signY = corner[1] >= 0 ? 1 : -1
+      const dx = event.clientX - drag.startX
+      const dy = event.clientY - drag.startY
+      const projected = dx * signX + dy * signY
+      const factor = clamp(1 + (projected * 0.004), 0.1, 40)
+      const nextScale: [number, number, number] = [
+        clamp(drag.startScale[0] * factor, feetToMeters(0.05), 999),
+        clamp(drag.startScale[1] * factor, feetToMeters(0.05), 999),
+        clamp(drag.startScale[2] * factor, feetToMeters(0.05), 999),
+      ]
+
+      setObjects((prev) => prev.map((o) => (o.id === drag.objectId ? { ...o, scale: nextScale } : o)))
+      const mesh = meshRefs.current[drag.objectId]
+      if (mesh) {
+        mesh.scale.set(nextScale[0], nextScale[1], nextScale[2])
+      }
+    }
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', stopCornerScaleDrag)
+    window.addEventListener('pointercancel', stopCornerScaleDrag)
+    window.addEventListener('blur', stopCornerScaleDrag)
+
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', stopCornerScaleDrag)
+      window.removeEventListener('pointercancel', stopCornerScaleDrag)
+      window.removeEventListener('blur', stopCornerScaleDrag)
+    }
+  }, [])
+
   const updateSelectedTransform = useCallback((position: [number, number, number], rotation: [number, number, number], scale: [number, number, number]) => {
     if (!selectedId) return
     setObjects((prev) => prev.map((o) => {
@@ -525,10 +728,14 @@ export default function CreateStudio() {
   }, [selectedId, updateSelectedTransform])
 
   const handleAIToolExecution = useCallback((toolCall: any) => {
-    // OpenAI returns tool calls with arguments as a JSON string
-    const { name, function: func } = toolCall
-    const args = typeof func?.arguments === 'string' ? JSON.parse(func.arguments) : func?.arguments
-    
+    // OpenAI returns tool calls with function.name, not a top-level name
+    const { function: func } = toolCall
+    const name: string = func?.name ?? toolCall.name ?? ''
+    let args: Record<string, any> | null = null
+    try {
+      args = typeof func?.arguments === 'string' ? JSON.parse(func.arguments) : (func?.arguments ?? null)
+    } catch { return }
+
     if (!args) return
     
     if (name === 'get_current_design') {
@@ -636,6 +843,8 @@ export default function CreateStudio() {
 
   return (
     <div className="fixed inset-x-0 top-16 bottom-0 z-10">
+      {/* Genesis pipeline brief + IRC code review (top-right floating panel) */}
+      <GenesisBriefPanel />
       {/* AI Assistant Floating Button - Bottom Right */}
       <button
         onClick={() => setAiPanelOpen(!aiPanelOpen)}
@@ -670,17 +879,20 @@ export default function CreateStudio() {
               <ToolIconButton label="Add Door" icon={<DoorOpen className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} onClick={() => addObject('door')} />
               <ToolIconButton label="Add Window" icon={<PanelTop className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} onClick={() => addObject('window')} />
             </ToolbarGroup>
+            <ToolbarSeparator orientation={toolbarOrientation} />
 
             <ToolbarGroup title="Transform" orientation={toolbarOrientation} showTitle={toolbarOrientation === 'horizontal'}>
               <ToolIconButton label="Move" icon={<Move className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} active={transformMode === 'translate'} onClick={() => setTransformMode('translate')} />
               <ToolIconButton label="Rotate" icon={<RotateCw className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} active={transformMode === 'rotate'} onClick={() => setTransformMode('rotate')} />
               <ToolIconButton label="Scale" icon={<Maximize2 className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} active={transformMode === 'scale'} onClick={() => setTransformMode('scale')} />
             </ToolbarGroup>
+            <ToolbarSeparator orientation={toolbarOrientation} />
 
             <ToolbarGroup title="View" orientation={toolbarOrientation} showTitle={toolbarOrientation === 'horizontal'}>
               <ToolIconButton label="3D View" icon={<Box className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} active={!pov} onClick={() => setPov(false)} />
               <ToolIconButton label="POV View" icon={<Eye className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} active={pov} onClick={() => { setPov(true); setTimeout(requestFpsCapture, 0); }} />
             </ToolbarGroup>
+            <ToolbarSeparator orientation={toolbarOrientation} />
 
             <ToolbarGroup title="Actions" orientation={toolbarOrientation} showTitle={toolbarOrientation === 'horizontal'}>
               <ToolIconButton label="Undo" icon={<Undo2 className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} disabled={!past.length} onClick={undo} />
@@ -688,11 +900,13 @@ export default function CreateStudio() {
               <ToolIconButton label="Duplicate" icon={<Copy className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} disabled={!selected || pov} onClick={duplicateSelected} />
               <ToolIconButton label="Delete" icon={<Trash2 className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} disabled={!selected || pov} danger onClick={deleteSelected} />
             </ToolbarGroup>
+            <ToolbarSeparator orientation={toolbarOrientation} />
 
             <ToolbarGroup title="Options" orientation={toolbarOrientation} showTitle={toolbarOrientation === 'horizontal'}>
               <ToolIconButton label="Snap" icon={<Crosshair className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} active={snapEnabled} onClick={() => setSnapEnabled((prev) => !prev)} />
               <ToolIconButton label="Grid" icon={<Grid2x2 className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} active={showGrid} onClick={() => setShowGrid((prev) => !prev)} />
             </ToolbarGroup>
+            <ToolbarSeparator orientation={toolbarOrientation} />
 
             <ToolbarGroup title="File" orientation={toolbarOrientation} showTitle={toolbarOrientation === 'horizontal'}>
               <ToolIconButton label="Save Draft" icon={<Save className="h-3 w-3" />} tooltipPlacement={toolbarTooltipPlacement} onClick={() => writeDraft(objects)} />
@@ -703,21 +917,21 @@ export default function CreateStudio() {
       </div>
 
       {selected && (
-        <div className="absolute right-4 top-4 z-20 w-52 rounded-xl border border-white/10 bg-neutral-900/90 p-3 text-[11px] backdrop-blur-sm shadow-2xl">
+        <div className="absolute right-4 top-4 z-20 w-44 rounded-[18px] border border-white/10 bg-neutral-900/88 p-2.5 text-[10px] backdrop-blur-xl shadow-[0_24px_60px_-24px_rgba(0,0,0,0.75)]">
           <div className="mb-2 flex items-center justify-between">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Properties</div>
-            <div className="rounded-full border border-[#a588ef]/30 bg-[#a588ef]/10 px-2 py-0.5 text-[10px] font-medium text-[#d9cfff]">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400">Properties</div>
+            <div className="rounded-full border border-[#a588ef]/30 bg-[#a588ef]/10 px-2 py-0.5 text-[9px] font-medium text-[#d9cfff]">
               Selected
             </div>
           </div>
 
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2">
             <div className="text-sm font-medium text-white">{selected.name}</div>
 
             <div className="flex flex-col gap-1">
               <span className="text-neutral-400">Color</span>
               <input
-                className="h-7 w-full cursor-pointer rounded-md border border-white/10 bg-neutral-800"
+                className="h-6.5 w-full cursor-pointer rounded-md border border-white/10 bg-neutral-800"
                 type="color"
                 value={selected.color}
                 onChange={(e) => updateSelected({ color: e.target.value })}
@@ -737,7 +951,7 @@ export default function CreateStudio() {
               />
             </div>
 
-            <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-neutral-800/40 p-2">
+            <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-neutral-800/40 p-1.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-neutral-400">Size</span>
                 <span className="text-[10px] text-neutral-500">ft</span>
@@ -748,7 +962,7 @@ export default function CreateStudio() {
                   { label: 'H', axis: 1, title: 'Height' },
                   { label: 'D', axis: 2, title: 'Depth' },
                 ].map(({ label, axis, title }) => (
-                  <div key={label} className="flex items-center gap-1.5 rounded-md border border-white/10 bg-neutral-900/70 px-2 py-1.5">
+                  <div key={label} className="flex items-center gap-1.5 rounded-md border border-white/10 bg-neutral-900/70 px-2 py-1">
                     <div className="w-4 shrink-0 text-[10px] font-semibold text-neutral-300" title={title}>{label}</div>
                     <button
                       type="button"
@@ -759,7 +973,7 @@ export default function CreateStudio() {
                       −
                     </button>
                     <input
-                      className="h-6 min-w-0 flex-1 rounded-md border border-white/10 bg-neutral-800 px-1.5 text-center text-[11px] text-white outline-none transition-colors focus:border-[#a588ef]/60"
+                      className="h-6 min-w-0 flex-1 rounded-md border border-white/10 bg-neutral-800 px-1.5 text-center text-[10px] text-white outline-none transition-colors focus:border-[#a588ef]/60"
                       type="number"
                       min={metersToFeet(0.05)}
                       step={0.1}
@@ -780,7 +994,7 @@ export default function CreateStudio() {
               </div>
             </div>
 
-            <div className="border-t border-white/10 pt-2 text-center text-[10px] text-neutral-400">
+            <div className="border-t border-white/10 pt-1.5 text-center text-[9px] text-neutral-400">
               {status || 'Ready'}
               {lastSavedAt && <span className="ml-1">• {new Date(lastSavedAt).toLocaleTimeString()}</span>}
             </div>
@@ -799,14 +1013,16 @@ export default function CreateStudio() {
           setSelectedId(null)
         }}
       >
-        <color attach="background" args={[0x333333]} />
-        <ambientLight intensity={0.9} />
-        <directionalLight position={[6, 10, 6]} intensity={1.2} castShadow />
+        <color attach="background" args={[0x1a1a1a]} />
+        <ambientLight intensity={0.6} />
+        <directionalLight position={[6, 10, 6]} intensity={1.4} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} />
+        <directionalLight position={[-4, 8, -4]} intensity={0.3} />
+        <hemisphereLight args={['#b8c6db', '#3a3a3a', 0.4]} />
         <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <planeGeometry args={[200, 200]} />
-          <meshStandardMaterial color="#2f2f2f" />
+          <meshStandardMaterial color="#1e1e1e" roughness={0.95} metalness={0} />
         </mesh>
-        {showGrid && <gridHelper args={[80, 80, '#666', '#333']} position={[0, 0.001, 0]} />}
+        {showGrid && <gridHelper args={[80, 80, '#444', '#2a2a2a']} position={[0, 0.001, 0]} />}
 
         {objects.map((obj) => {
           const isSelected = obj.id === selectedId
@@ -842,67 +1058,103 @@ export default function CreateStudio() {
                 <>
                   <lineSegments>
                     <edgesGeometry args={[new THREE.BoxGeometry(1, 1, 1)]} />
-                    <lineBasicMaterial color="#bda2ff" depthTest={false} transparent opacity={0.9} linewidth={1.5} />
+                    <lineBasicMaterial color="#c7b5ff" depthTest={false} transparent opacity={0.55} linewidth={1.5} />
                   </lineSegments>
-                  {BOX_CORNERS.map((corner, i) => (
-                    <group key={i} position={corner}>
-                      <mesh
-                        scale={2.0}
-                        onPointerOver={(e) => {
-                          e.stopPropagation()
-                          setHoveredCorner(`${obj.id}:${i}`)
-                        }}
-                        onPointerOut={(e) => {
-                          e.stopPropagation()
-                          setHoveredCorner((current) => (current === `${obj.id}:${i}` ? null : current))
-                        }}
-                        onPointerDown={(e) => {
-                          e.stopPropagation()
-                          setSelectedId(obj.id)
-                          setTransformMode('scale')
-                        }}
-                      >
-                        <sphereGeometry args={[0.12, 18, 18]} />
-                        <meshBasicMaterial transparent opacity={0.001} depthWrite={false} />
-                      </mesh>
-                      <mesh scale={hoveredCorner === `${obj.id}:${i}` ? 1.1 : 1.0}>
-                        <sphereGeometry args={[0.055, 18, 18]} />
-                        <meshBasicMaterial
-                          color="#f5efff"
-                          transparent
-                          opacity={hoveredCorner === `${obj.id}:${i}` ? 0.55 : 0.34}
-                          depthWrite={false}
-                          blending={THREE.AdditiveBlending}
-                        />
-                      </mesh>
-                      <mesh scale={hoveredCorner === `${obj.id}:${i}` ? 1.25 : 1.02}>
-                        <sphereGeometry args={[0.035, 16, 16]} />
-                        <meshStandardMaterial
-                          color="#faf8ff"
-                          emissive="#a588ef"
-                          emissiveIntensity={hoveredCorner === `${obj.id}:${i}` ? 1.2 : 0.75}
-                          roughness={0.16}
-                          metalness={0.08}
-                        />
-                      </mesh>
-                      <mesh scale={hoveredCorner === `${obj.id}:${i}` ? 1.75 : 1.42}>
-                        <sphereGeometry args={[0.07, 20, 20]} />
-                        <meshBasicMaterial
-                          color="#a588ef"
-                          transparent
-                          opacity={hoveredCorner === `${obj.id}:${i}` ? 0.15 : 0.08}
-                          depthWrite={false}
-                          blending={THREE.AdditiveBlending}
-                        />
-                      </mesh>
-                    </group>
-                  ))}
+                  {BOX_CORNERS.map((corner, i) => {
+                    const cornerKey = `${obj.id}:${i}`
+                    const isCornerActive = activeCornerKey === cornerKey
+                    const isCornerHovered = hoveredCorner === cornerKey
+
+                    return (
+                      <group key={i} position={corner}>
+                        <mesh
+                          scale={1.35}
+                          onPointerOver={(e) => {
+                            e.stopPropagation()
+                            setHoveredCorner(cornerKey)
+                          }}
+                          onPointerOut={(e) => {
+                            e.stopPropagation()
+                            setHoveredCorner((current) => (current === cornerKey ? null : current))
+                          }}
+                          onPointerDown={(e) => {
+                            e.stopPropagation()
+                            beginCornerScaleDrag(obj, i, e.clientX, e.clientY)
+                          }}
+                        >
+                          <sphereGeometry args={[0.08, 18, 18]} />
+                          <meshBasicMaterial transparent opacity={0.001} depthWrite={false} />
+                        </mesh>
+                        <mesh scale={isCornerActive ? 1.18 : isCornerHovered ? 1.06 : 1.0}>
+                          <sphereGeometry args={[0.042, 18, 18]} />
+                          <meshBasicMaterial
+                            color="#f5efff"
+                            transparent
+                            opacity={isCornerActive ? 0.55 : isCornerHovered ? 0.4 : 0.24}
+                            depthWrite={false}
+                            blending={THREE.AdditiveBlending}
+                          />
+                        </mesh>
+                        <mesh scale={isCornerActive ? 1.25 : isCornerHovered ? 1.18 : 1.0}>
+                          <sphereGeometry args={[0.028, 16, 16]} />
+                          <meshStandardMaterial
+                            color="#faf8ff"
+                            emissive="#a588ef"
+                            emissiveIntensity={isCornerActive ? 1.1 : isCornerHovered ? 0.95 : 0.55}
+                            roughness={0.22}
+                            metalness={0.06}
+                          />
+                        </mesh>
+                        <mesh scale={isCornerActive ? 1.6 : isCornerHovered ? 1.45 : 1.18}>
+                          <sphereGeometry args={[0.055, 20, 20]} />
+                          <meshBasicMaterial
+                            color="#a588ef"
+                            transparent
+                            opacity={isCornerActive ? 0.16 : isCornerHovered ? 0.1 : 0.05}
+                            depthWrite={false}
+                            blending={THREE.AdditiveBlending}
+                          />
+                        </mesh>
+                      </group>
+                    )
+                  })}
                 </>
               )}
             </mesh>
           )
 
-          return <group key={obj.id}>{meshNode}</group>
+          // Render floating room label for floor slabs
+          const roomLabel = (obj as any).__roomLabel as string | undefined
+
+          return (
+            <group key={obj.id}>
+              {meshNode}
+              {roomLabel && (
+                <Html
+                  position={[obj.position[0], obj.position[1] + 0.6, obj.position[2]]}
+                  center
+                  distanceFactor={12}
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <div style={{
+                    background: 'rgba(0,0,0,0.65)',
+                    backdropFilter: 'blur(6px)',
+                    borderRadius: '6px',
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: '#e0e0e0',
+                    whiteSpace: 'nowrap',
+                    letterSpacing: '0.02em',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    userSelect: 'none',
+                  }}>
+                    {roomLabel}
+                  </div>
+                </Html>
+              )}
+            </group>
+          )
         })}
 
         {selectedMesh && !pov && (
@@ -915,7 +1167,7 @@ export default function CreateStudio() {
               translationSnap={snapEnabled ? snapStep : undefined}
               rotationSnap={snapEnabled ? THREE.MathUtils.degToRad(15) : undefined}
               scaleSnap={snapEnabled ? snapStep : undefined}
-              size={2.35}
+              size={0.85}
               onMouseDown={() => {
                 pushHistory()
                 setIsTransformDragging(true)
@@ -926,6 +1178,16 @@ export default function CreateStudio() {
                 if (orbitRef.current) orbitRef.current.enabled = true
               }}
               onObjectChange={handleTransformObjectChange}
+            />
+            <SelectedObjectToolbar
+              object={selectedMesh}
+              mode={transformMode}
+              snapEnabled={snapEnabled}
+              onSetMode={setTransformMode}
+              onToggleSnap={() => setSnapEnabled((prev) => !prev)}
+              onDuplicate={duplicateSelected}
+              onDelete={deleteSelected}
+              disabled={pov}
             />
           </>
         )}
@@ -970,7 +1232,7 @@ function BoundingBoxHelper({ object }: { object: THREE.Object3D }) {
     new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
   ], [])
   const geometry = useMemo(() => new THREE.BufferGeometry(), [])
-  const material = useMemo(() => new THREE.LineBasicMaterial({ color: 0xbda2ff, depthTest: false, transparent: true, opacity: 0.7 }), [])
+  const material = useMemo(() => new THREE.LineBasicMaterial({ color: 0xbda2ff, depthTest: false, transparent: true, opacity: 0.4 }), [])
   
   useFrame(() => {
     box.setFromObject(object)

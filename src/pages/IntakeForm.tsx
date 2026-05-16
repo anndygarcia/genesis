@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Sparkles } from 'lucide-react'
 import { createProject } from '../lib/supabase'
+import { buildShell, generateHouse, GenesisApiError, pipelineHealth } from '../lib/genesis-api'
+import { stageFloorPlanForStudio } from '../lib/floorplan'
+import { toast } from '../components/Toast'
 
 const STEPS = ["Style", "Details", "Notes"] as const
 
@@ -59,6 +62,11 @@ export default function IntakeForm() {
   // Upload state for reference images (persisted to Supabase)
   // (unused while voice is disabled and uploads handled elsewhere)
   const [creating, setCreating] = useState(false)
+  // Pipeline generation state
+  const [generating, setGenerating] = useState(false)
+  const [generateError, setGenerateError] = useState<string>('')
+  const [pipelineOnline, setPipelineOnline] = useState(false)
+  const [blenderAvailable, setBlenderAvailable] = useState(false)
   // Feature flag to disable voice end-to-end (read from Vite env)
   const DISABLE_VOICE = String(((import.meta as any).env.VITE_DISABLE_VOICE ?? '')).toLowerCase() === 'true'
   // Voice agent overlay (disabled when feature flag is on)
@@ -343,19 +351,27 @@ export default function IntakeForm() {
 
   // Minimal tool routing from Realtime messages
   async function handleRealtimeMessage(msg: any) {
-    // Tool call detection pattern per Realtime events
-    if (msg.type === 'response.output_item.added' && msg.item?.type === 'tool_call') {
+    // response.output_item.done fires when a tool call item is fully streamed
+    if (msg.type === 'response.output_item.done' && msg.item?.type === 'function_call') {
       const tool = msg.item
       if (tool.name === 'set_style') {
-        const { style } = tool.arguments || {}
+        // arguments arrives as a JSON string from the Realtime API
+        let parsedArgs: { style?: string } = {}
+        try { parsedArgs = JSON.parse(tool.arguments || '{}') } catch {}
+        const { style } = parsedArgs
         if (style && STYLE_OPTIONS.some(o => o.value === style)) {
           setData(d => ({ ...d, style: { ...d.style, archetype: style } }))
-          // respond with tool output (ack)
+          // Submit tool output using the Realtime API conversation item format
           postEvent({
-            type: 'tool.output',
-            tool_call_id: tool.id,
-            output: JSON.stringify({ ok: true })
+            type: 'conversation.item.create',
+            item: {
+              type: 'function_call_output',
+              call_id: tool.call_id,
+              output: JSON.stringify({ ok: true }),
+            },
           })
+          // Prompt the model to continue after receiving the tool result
+          postEvent({ type: 'response.create' })
           // close overlay once chosen
           setAgentOpen(false)
         }
@@ -369,6 +385,123 @@ export default function IntakeForm() {
   }
   function prev() {
     if (stepIndex > 0) setStepIndex(i => i - 1)
+  }
+
+  // Poll pipeline health so we can disable the generate button when offline.
+  useEffect(() => {
+    let mounted = true
+    const check = async () => {
+      const res = await pipelineHealth()
+      if (mounted) {
+        setPipelineOnline(res.ok)
+        setBlenderAvailable(!!res.capabilities?.blender_shell)
+      }
+    }
+    check()
+    const id = setInterval(check, 10_000)
+    return () => { mounted = false; clearInterval(id) }
+  }, [])
+
+  async function onGenerateHome() {
+    if (generating) return
+    setGenerateError('')
+    // Graceful pre-flight: confirm the server is reachable.
+    const health = await pipelineHealth()
+    if (!health.ok) {
+      const apiUrl = (import.meta as any).env?.VITE_GENESIS_API_URL || 'http://127.0.0.1:8787'
+      const msg = `Pipeline is offline. Start it first:\n  uvicorn pipeline.api.server:app --port 8787\nOr set VITE_GENESIS_API_URL=${apiUrl}`
+      setGenerateError(msg)
+      toast.error(msg)
+      return
+    }
+    setGenerating(true)
+    try {
+      toast.info(`Generating ${data.style.archetype || 'modern'} home…`)
+      const intakePayload = {
+        basics: data.basics,
+        rooms: data.rooms,
+        style: data.style,
+        budget: data.budget,
+        notes: data.notes,
+      }
+      const { plan, brief } = await generateHouse(intakePayload)
+      // Stash the exact intake we sent so the brief panel can replay it
+      // for /refine_plan without needing the user to re-fill the form.
+      try {
+        localStorage.setItem('genesis_intake_v1', JSON.stringify(intakePayload))
+      } catch {}
+      toast.success(`Home generated! ${plan.rooms.length} rooms, ${plan.walls.length} walls, ${plan.furniture.length} furniture items.`)
+      // Stage the FloorPlan into CreateStudio's draft storage so the
+      // editor opens with the generated home pre-loaded.
+      stageFloorPlanForStudio(plan)
+      try {
+        // Surface the architect brief to the editor for an info banner.
+        localStorage.setItem('genesis_architect_brief_v1', JSON.stringify(brief))
+        // A new home was generated; reset any prior dismissal so the
+        // brief panel reappears for the user.
+        localStorage.removeItem('genesis_brief_dismissed_v1')
+        // Mark shell build as pending so the editor shows a status pill
+        // while Blender does its work in the background.
+        localStorage.setItem('genesis_shell_status_v1', JSON.stringify({
+          state: 'pending', startedAt: new Date().toISOString(),
+        }))
+        localStorage.removeItem('genesis_shell_v1')
+      } catch {}
+
+      // Fire-and-forget the Blender shell build only if Blender is known
+      // to be available. Otherwise we skip the 503 and use templated mode.
+      if (blenderAvailable) {
+        void buildShell({ plan }).then((res) => {
+          try {
+            localStorage.setItem('genesis_shell_v1', JSON.stringify(res))
+            localStorage.setItem('genesis_shell_status_v1', JSON.stringify({
+              state: 'ready', updatedAt: new Date().toISOString(),
+            }))
+            toast.success('3D shell build complete!')
+          } catch {}
+        }).catch((err) => {
+          const is503 = err instanceof GenesisApiError && err.status === 503
+          if (is503) {
+            toast.info('Using templated 3D mode (install Blender for photoreal shells).')
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn('[shell] background build failed', err)
+            toast.warning('Shell build failed — using templated primitives.')
+          }
+          try {
+            localStorage.setItem('genesis_shell_status_v1', JSON.stringify({
+              state: 'failed',
+              updatedAt: new Date().toISOString(),
+              message: err instanceof GenesisApiError
+                ? `${err.status}: ${err.body?.slice(0, 240) || 'pipeline error'}`
+                : (err instanceof Error ? err.message : 'unknown error'),
+            }))
+          } catch {}
+        })
+      } else {
+        try {
+          localStorage.setItem('genesis_shell_status_v1', JSON.stringify({
+            state: 'skipped',
+            updatedAt: new Date().toISOString(),
+            message: 'Blender not available — using templated 3D mode. Install Blender to enable photoreal shells.',
+          }))
+        } catch {}
+      }
+
+      navigate('/start')
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[generate_home] failed', err)
+      const msg = err instanceof GenesisApiError
+        ? `Pipeline error ${err.status}. Is the API running on ${(import.meta as any).env?.VITE_GENESIS_API_URL || 'http://127.0.0.1:8787'}?`
+        : err instanceof Error
+          ? err.message
+          : 'Unknown error'
+      setGenerateError(msg)
+      toast.error(msg)
+    } finally {
+      setGenerating(false)
+    }
   }
 
   async function onCreateProject() {
@@ -494,27 +627,249 @@ export default function IntakeForm() {
           </div>
         </div>
       )}
-      <div className="mb-6 flex items-center justify-between">
-        <div className="text-sm text-neutral-400">Step {stepIndex + 1} of {STEPS.length}</div>
+      {/* Step progress bar */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          {STEPS.map((stepName, i) => (
+            <button
+              key={stepName}
+              type="button"
+              onClick={() => setStepIndex(i)}
+              className={`text-sm font-medium transition-colors ${i <= stepIndex ? 'text-[#a588ef]' : 'text-neutral-500'}`}
+            >
+              {stepName}
+            </button>
+          ))}
+        </div>
+        <div className="h-1 rounded-full bg-neutral-800 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-[#a588ef] to-purple-400 transition-all duration-500 ease-out"
+            style={{ width: `${((stepIndex + 1) / STEPS.length) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Step Content */}
+      <div className="min-h-[420px]">
+        {/* Step 1: Style */}
+        {stepIndex === 0 && (
+          <div>
+            <h2 className="text-2xl font-semibold text-white mb-1">Choose your style</h2>
+            <p className="text-neutral-400 text-sm mb-6">Select the architectural style that speaks to you. This guides the AI's design choices.</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {STYLE_OPTIONS.map((opt) => {
+                const isSelected = data.style.archetype === opt.value
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setData(d => ({ ...d, style: { ...d.style, archetype: opt.value } }))}
+                    className={`group relative overflow-hidden rounded-xl border p-4 text-left transition-all duration-200 ease-out hover:-translate-y-0.5 ${
+                      isSelected
+                        ? 'border-[#a588ef] bg-[#a588ef]/10 ring-1 ring-[#a588ef]/40 shadow-[0_0_24px_rgba(165,136,239,0.15)]'
+                        : 'border-white/10 bg-neutral-900/60 hover:border-white/20 hover:bg-neutral-800/60'
+                    }`}
+                  >
+                    <div className={`mb-2 h-1 w-8 rounded-full transition-all duration-300 ${isSelected ? 'bg-[#a588ef]' : 'bg-neutral-700 group-hover:bg-neutral-600'}`} />
+                    <div className={`text-sm font-semibold ${isSelected ? 'text-white' : 'text-neutral-200'}`}>{opt.label}</div>
+                    {isSelected && (
+                      <div className="absolute top-2 right-2">
+                        <div className="h-2 w-2 rounded-full bg-[#a588ef] shadow-[0_0_8px_rgba(165,136,239,0.6)]" />
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Details */}
+        {stepIndex === 1 && (
+          <div>
+            <h2 className="text-2xl font-semibold text-white mb-1">Tell us the details</h2>
+            <p className="text-neutral-400 text-sm mb-6">Dial in the size and layout of your dream home.</p>
+
+            <div className="space-y-6">
+              {/* Square footage */}
+              <div className="rounded-xl border border-white/10 bg-neutral-900/60 p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-medium text-neutral-200">Square Footage</label>
+                  <span className="text-lg font-semibold text-white tabular-nums">{data.basics.sqft.toLocaleString()} sqft</span>
+                </div>
+                <input
+                  type="range"
+                  min={800}
+                  max={8000}
+                  step={100}
+                  value={data.basics.sqft}
+                  onChange={(e) => setData(d => ({ ...d, basics: { ...d.basics, sqft: parseInt(e.target.value) } }))}
+                  className="w-full accent-[#a588ef]"
+                />
+                <div className="flex justify-between text-xs text-neutral-500 mt-1">
+                  <span>800</span>
+                  <span>8,000</span>
+                </div>
+              </div>
+
+              {/* Counter grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Floors', key: 'basics' as const, field: 'floors' as const, min: 1, max: 4 },
+                  { label: 'Bedrooms', key: 'rooms' as const, field: 'beds' as const, min: 1, max: 8 },
+                  { label: 'Bathrooms', key: 'rooms' as const, field: 'baths' as const, min: 1, max: 6 },
+                  { label: 'Garage (cars)', key: 'rooms' as const, field: 'garage' as const, min: 0, max: 4 },
+                ].map((item) => {
+                  const value = (data as any)[item.key][item.field] as number
+                  return (
+                    <div key={item.field} className="rounded-xl border border-white/10 bg-neutral-900/60 p-4 text-center">
+                      <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-2">{item.label}</div>
+                      <div className="flex items-center justify-center gap-3">
+                        <button
+                          type="button"
+                          disabled={value <= item.min}
+                          onClick={() => setData(d => ({
+                            ...d,
+                            [item.key]: { ...(d as any)[item.key], [item.field]: Math.max(item.min, value - 1) }
+                          }))}
+                          className="h-8 w-8 rounded-lg border border-white/10 bg-neutral-800 text-neutral-300 transition-colors hover:bg-neutral-700 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          −
+                        </button>
+                        <span className="text-xl font-bold text-white tabular-nums w-6 text-center">{value}</span>
+                        <button
+                          type="button"
+                          disabled={value >= item.max}
+                          onClick={() => setData(d => ({
+                            ...d,
+                            [item.key]: { ...(d as any)[item.key], [item.field]: Math.min(item.max, value + 1) }
+                          }))}
+                          className="h-8 w-8 rounded-lg border border-white/10 bg-neutral-800 text-neutral-300 transition-colors hover:bg-neutral-700 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Budget (optional) */}
+              <div className="rounded-xl border border-white/10 bg-neutral-900/60 p-5">
+                <label className="text-sm font-medium text-neutral-200 block mb-2">Budget (optional)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
+                  <input
+                    type="number"
+                    placeholder="e.g. 350000"
+                    value={data.budget.amount ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value.trim()
+                      setData(d => ({ ...d, budget: { amount: v ? parseInt(v) : null } }))
+                    }}
+                    className="w-full rounded-lg border border-white/10 bg-neutral-800 pl-7 pr-3 py-2.5 text-white placeholder:text-neutral-500 outline-none focus:border-[#a588ef]/60 focus:ring-1 focus:ring-[#a588ef]/30 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Notes */}
+        {stepIndex === 2 && (
+          <div>
+            <h2 className="text-2xl font-semibold text-white mb-1">Anything else?</h2>
+            <p className="text-neutral-400 text-sm mb-6">Add notes, preferences, or special requests for the AI architect.</p>
+
+            <textarea
+              value={data.notes}
+              onChange={(e) => setData(d => ({ ...d, notes: e.target.value }))}
+              placeholder="e.g. Open kitchen flowing into the living room, big windows toward the backyard, home office near the entry, mudroom from the garage..."
+              rows={6}
+              className="w-full rounded-xl border border-white/10 bg-neutral-900/60 px-4 py-3 text-white placeholder:text-neutral-500 outline-none focus:border-[#a588ef]/60 focus:ring-1 focus:ring-[#a588ef]/30 resize-y transition-colors"
+            />
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {[
+                'Open concept kitchen + living',
+                'Big windows to the backyard',
+                'Home office near entry',
+                'Walk-in closet in master',
+                'Mudroom from garage',
+                'Covered patio or porch',
+              ].map((tip) => (
+                <button
+                  key={tip}
+                  type="button"
+                  onClick={() => setData(d => ({ ...d, notes: d.notes ? `${d.notes}\n${tip}` : tip }))}
+                  className="rounded-lg border border-white/10 bg-neutral-900/60 px-3 py-2 text-left text-xs text-neutral-400 transition-colors hover:border-white/20 hover:bg-neutral-800/60 hover:text-neutral-200"
+                >
+                  + {tip}
+                </button>
+              ))}
+            </div>
+
+            {/* Summary */}
+            <div className="mt-6 rounded-xl border border-white/10 bg-neutral-900/40 p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-3">Summary</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <div>
+                  <span className="text-neutral-500">Style</span>
+                  <div className="text-white font-medium">{data.style.archetype ? STYLE_OPTIONS.find(o => o.value === data.style.archetype)?.label || data.style.archetype : 'Not set'}</div>
+                </div>
+                <div>
+                  <span className="text-neutral-500">Size</span>
+                  <div className="text-white font-medium">{data.basics.sqft.toLocaleString()} sqft</div>
+                </div>
+                <div>
+                  <span className="text-neutral-500">Layout</span>
+                  <div className="text-white font-medium">{data.rooms.beds}bd / {data.rooms.baths}ba</div>
+                </div>
+                <div>
+                  <span className="text-neutral-500">Floors</span>
+                  <div className="text-white font-medium">{data.basics.floors}{data.rooms.garage > 0 ? ` + ${data.rooms.garage}-car garage` : ''}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Navigation footer */}
+      <div className="mt-8 flex items-center justify-between">
         <button onClick={prev} disabled={stepIndex===0}
-          className="inline-flex items-center gap-2 rounded-md border border-white/10 px-4 py-2 text-neutral-200 hover:bg:white/10 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-neutral-200 transition-colors hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <ArrowLeft className="size-4" /> Back
         </button>
         {stepIndex < STEPS.length - 1 ? (
           <button onClick={next}
-            className="inline-flex items-center gap-2 rounded-md btn-accent px-4 py-2 text-white shadow transform-gpu transition-transform duration-300 ease-out hover:scale-105 active:scale-100"
+            className="inline-flex items-center gap-2 rounded-lg btn-accent px-5 py-2.5 text-white shadow-[0_0_16px_rgba(165,136,239,0.18)] transform-gpu transition-transform duration-300 ease-out hover:scale-105 active:scale-100"
           >
             Next <ArrowRight className="size-4" />
           </button>
         ) : (
-          <button onClick={onCreateProject} disabled={creating}
-            className="inline-flex items-center gap-2 rounded-md btn-accent px-4 py-2 text-white shadow disabled:opacity-60"
-          >
-            {creating ? 'Creating…' : 'Create Project'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={onCreateProject} disabled={creating || generating}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-neutral-200 transition-colors hover:bg-white/10 disabled:opacity-60"
+            >
+              {creating ? 'Saving…' : 'Save as Project'}
+            </button>
+            <button onClick={onGenerateHome} disabled={generating || creating || !pipelineOnline}
+              className="inline-flex items-center gap-2 rounded-lg btn-accent px-5 py-2.5 text-white shadow-[0_0_16px_rgba(165,136,239,0.18)] disabled:opacity-60"
+              title={pipelineOnline ? "Run the Genesis pipeline to generate a full home from your intake" : "Pipeline offline — start the backend server first"}
+            >
+              <Sparkles className="size-4" />
+              {generating ? 'Generating…' : !pipelineOnline ? 'Pipeline Offline' : 'Generate Home'}
+            </button>
+          </div>
         )}
       </div>
+      {generateError && stepIndex === STEPS.length - 1 && (
+        <div className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-sm text-red-300">
+          {generateError}
+        </div>
+      )}
     </div>
   )
 }

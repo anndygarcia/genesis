@@ -386,11 +386,12 @@ Always explain what you're doing before taking action.`
  * Convert tool call arguments to StudioObject
  */
 export function toolCallToObject(toolCall: any): StudioObject | null {
-  const { name, function: func } = toolCall
+  const { function: func } = toolCall
+  const name: string = func?.name ?? toolCall.name ?? ''
   const args = parseToolCallArguments(func?.arguments)
-  
+
   if (!args) return null
-  
+
   if (name === 'add_object') {
     const { kind, position, dimensions, rotation } = args
     return {
@@ -430,7 +431,8 @@ export function toolCallToObject(toolCall: any): StudioObject | null {
  * Convert a tool call into one or more StudioObject entries.
  */
 export function toolCallToObjects(toolCall: any): StudioObject[] {
-  const { name, function: func } = toolCall
+  const { function: func } = toolCall
+  const name: string = func?.name ?? toolCall.name ?? ''
   const args = parseToolCallArguments(func?.arguments)
   if (!args) return []
 
@@ -446,7 +448,8 @@ export function toolCallToObjects(toolCall: any): StudioObject[] {
  * Return a human-readable label for AI action feedback.
  */
 export function summarizeToolCall(toolCall: any): string {
-  const { name, function: func } = toolCall
+  const { function: func } = toolCall
+  const name: string = func?.name ?? toolCall.name ?? ''
   const args = parseToolCallArguments(func?.arguments)
 
   if (name === 'generate_room') {

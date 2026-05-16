@@ -1,9 +1,9 @@
 import React from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Suspense, useEffect, useMemo, useRef } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
+import { useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 function decodeRepeated(value: string, maxPasses = 2) {
   let out = value
@@ -17,6 +17,55 @@ function decodeRepeated(value: string, maxPasses = 2) {
     }
   }
   return out
+}
+
+function prepareThumbScene(cloned: THREE.Group) {
+  const box = new THREE.Box3().setFromObject(cloned)
+  const size = new THREE.Vector3()
+  const center = new THREE.Vector3()
+  box.getSize(size)
+  box.getCenter(center)
+
+  const maxDim = Math.max(size.x, size.y, size.z)
+  if (maxDim > 0) {
+    const scale = 2 / maxDim
+    cloned.scale.setScalar(scale)
+    const scaledBox = new THREE.Box3().setFromObject(cloned)
+    scaledBox.getSize(size)
+    scaledBox.getCenter(center)
+  }
+
+  cloned.position.sub(center)
+
+  // Normalize materials to avoid overly dark/transparent look
+  cloned.traverse((obj) => {
+    if (!obj) return
+    const m = obj as THREE.Mesh
+    if ((m as any)?.isMesh) {
+      const mat: any = (m as any).material
+      if (Array.isArray(mat)) {
+        mat.forEach((mm: any) => {
+          if (!mm) return
+          mm.side = THREE.DoubleSide
+          if (mm.transparent && mm.opacity < 0.2) { mm.transparent = false; mm.opacity = 1 }
+          if (!mm.map && mm.color && mm.color.r < 0.02 && mm.color.g < 0.02 && mm.color.b < 0.02) {
+            mm.color = new THREE.Color('#bfbfbf')
+          }
+        })
+      } else if (mat) {
+        mat.side = THREE.DoubleSide
+        if (mat.transparent && mat.opacity < 0.2) { mat.transparent = false; mat.opacity = 1 }
+        if (!mat.map && mat.color && mat.color.r < 0.02 && mat.color.g < 0.02 && mat.color.b < 0.02) {
+          mat.color = new THREE.Color('#bfbfbf')
+        }
+      } else {
+        // Assign a neutral material if missing
+        m.material = new THREE.MeshStandardMaterial({ color: '#bfbfbf' })
+      }
+    }
+  })
+
+  return { cloned, size }
 }
 
 function sanitizeGlbUrl(raw: string) {
@@ -58,9 +107,10 @@ function isCanvasMostlyFlat(canvas: HTMLCanvasElement) {
   }
 }
 
-const MAX_ACTIVE_THUMB_CANVASES = 6
+const MAX_ACTIVE_THUMB_CANVASES = 9
 let activeThumbCanvases = 0
 const thumbImageCache = new Map<string, string>()
+const thumbFailureCache = new Set<string>()
 
 // Simple error boundary so a failed GLB load doesn't crash the whole page
 class ThumbErrorBoundary extends React.Component<{ children: React.ReactNode; onError?: () => void }, { hasError: boolean }> {
@@ -95,10 +145,12 @@ export function GLBThumb({ url, className, lazy }: { url: string; className?: st
   const [renderEnabled, setRenderEnabled] = React.useState(false)
   const [renderRetryTick, setRenderRetryTick] = React.useState(0)
   const [snapshotSrc, setSnapshotSrc] = React.useState('')
+  const [hasFailed, setHasFailed] = React.useState(() => !!safeUrl && thumbFailureCache.has(safeUrl))
 
   useEffect(() => {
     const cached = thumbImageCache.get(safeUrl)
     setSnapshotSrc(cached || '')
+    setHasFailed(!!safeUrl && thumbFailureCache.has(safeUrl))
     captureScheduledRef.current = false
   }, [safeUrl])
   // Observe visibility to lazy-mount thumbnail Canvas
@@ -132,18 +184,14 @@ export function GLBThumb({ url, className, lazy }: { url: string; className?: st
       }
       const gl = glRef.current as any
       if (!gl) return
-      if (!contextLostRef.current) {
-        try {
-          gl.forceContextLoss && gl.forceContextLoss()
-          contextLostRef.current = true
-        } catch {}
-      }
+      // Three.js's dispose() internally calls forceContextLoss();
+      // calling it again produces "context already lost" warnings.
       try { gl.dispose && gl.dispose() } catch {}
       glRef.current = null
     }
   }, [])
   useEffect(() => {
-    const wantsRender = inView && !!safeUrl && !snapshotSrc
+    const wantsRender = inView && !!safeUrl && !snapshotSrc && !hasFailed
     if (!wantsRender) {
       if (claimedCanvasRef.current) {
         claimedCanvasRef.current = false
@@ -167,7 +215,7 @@ export function GLBThumb({ url, className, lazy }: { url: string; className?: st
 
     const timer = window.setTimeout(() => setRenderRetryTick((v) => v + 1), 120)
     return () => window.clearTimeout(timer)
-  }, [inView, safeUrl, snapshotSrc, renderEnabled, renderRetryTick])
+  }, [inView, safeUrl, snapshotSrc, hasFailed, renderEnabled, renderRetryTick])
 
   const releaseCanvasSlot = React.useCallback(() => {
     if (claimedCanvasRef.current) {
@@ -207,9 +255,12 @@ export function GLBThumb({ url, className, lazy }: { url: string; className?: st
 
   const handleThumbError = React.useCallback(() => {
     captureScheduledRef.current = false
+    if (safeUrl) {
+      thumbFailureCache.add(safeUrl)
+      setHasFailed(true)
+    }
     releaseCanvasSlot()
-    window.setTimeout(() => setRenderRetryTick((v) => v + 1), 220)
-  }, [releaseCanvasSlot])
+  }, [safeUrl, releaseCanvasSlot])
 
   return (
     <div className={className} ref={containerRef}>
@@ -223,6 +274,10 @@ export function GLBThumb({ url, className, lazy }: { url: string; className?: st
             decoding="async"
             draggable={false}
           />
+        ) : hasFailed || (!!safeUrl && thumbFailureCache.has(safeUrl)) ? (
+          <div className="w-full h-full grid place-items-center bg-neutral-900 text-neutral-400 text-[11px] text-center px-3">
+            Preview unavailable
+          </div>
         ) : inView && !!safeUrl && renderEnabled ? (
           <ShadowHost>
             <Dummy2DCanvas />
@@ -251,12 +306,17 @@ export function GLBThumb({ url, className, lazy }: { url: string; className?: st
                       claimedCanvasRef.current = false
                       activeThumbCanvases = Math.max(0, activeThumbCanvases - 1)
                     }
-                    setRenderEnabled(false)
-                    captureScheduledRef.current = false
-                    window.setTimeout(() => {
-                      contextLostRef.current = false
-                      setRenderRetryTick((v) => v + 1)
-                    }, 250)
+                    // Guard: don't React-state-update if component already unmounted.
+                    if (containerRef.current) {
+                      setRenderEnabled(false)
+                      captureScheduledRef.current = false
+                      window.setTimeout(() => {
+                        if (containerRef.current) {
+                          contextLostRef.current = false
+                          setRenderRetryTick((v) => v + 1)
+                        }
+                      }, 250)
+                    }
                   }, { once: true })
                 }
               }}
@@ -266,11 +326,7 @@ export function GLBThumb({ url, className, lazy }: { url: string; className?: st
               <hemisphereLight args={[0xffffff, 0x666666, 0.9]} />
               <directionalLight position={[2, 3, 2]} intensity={1.2} />
               <directionalLight position={[-3, 2, 1]} intensity={0.7} />
-              <Suspense
-                fallback={<mesh><boxGeometry args={[1, 0.6, 0.05]} /><meshStandardMaterial color="#2a2a2a" /></mesh>}
-              >
-                <ThumbModel url={safeUrl} onReady={captureSnapshot} />
-              </Suspense>
+              <SafeThumbModel url={safeUrl} onReady={captureSnapshot} onError={handleThumbError} />
             </Canvas>
           </ShadowHost>
         ) : (
@@ -281,64 +337,51 @@ export function GLBThumb({ url, className, lazy }: { url: string; className?: st
   )
 }
 
-function ThumbModel({ url, onReady }: { url: string; onReady?: () => void }) {
-  const { scene } = useGLTF(url, true)
+function SafeThumbModel({ url, onReady, onError }: { url: string; onReady?: () => void; onError?: () => void }) {
   const { camera, invalidate } = useThree()
-  const cloned = useMemo(() => scene.clone(true), [scene])
-  useFrame(() => {
-    onReady?.()
-  })
+  const [scene, setScene] = React.useState<THREE.Group | null>(null)
+
   useEffect(() => {
-    const box = new THREE.Box3().setFromObject(cloned)
-    const size = new THREE.Vector3()
-    const center = new THREE.Vector3()
-    box.getSize(size)
-    box.getCenter(center)
-    const maxDim = Math.max(size.x, size.y, size.z)
-    if (maxDim > 0) {
-      const scale = 2 / maxDim
-      cloned.scale.setScalar(scale)
-      const sBox = new THREE.Box3().setFromObject(cloned)
-      sBox.getSize(size)
-      sBox.getCenter(center)
-    }
-    cloned.position.sub(center)
+    let mounted = true
+    setScene(null)
 
-    // Normalize materials to avoid overly dark/transparent look
-    cloned.traverse((obj) => {
-      if (!obj) return
-      const m = obj as THREE.Mesh
-      if ((m as any)?.isMesh) {
-        const mat: any = (m as any).material
-        if (Array.isArray(mat)) {
-          mat.forEach((mm: any) => {
-            if (!mm) return
-            mm.side = THREE.DoubleSide
-            if (mm.transparent && mm.opacity < 0.2) { mm.transparent = false; mm.opacity = 1 }
-            if (!mm.map && mm.color && mm.color.r < 0.02 && mm.color.g < 0.02 && mm.color.b < 0.02) {
-              mm.color = new THREE.Color('#bfbfbf')
-            }
-          })
-        } else if (mat) {
-          mat.side = THREE.DoubleSide
-          if (mat.transparent && mat.opacity < 0.2) { mat.transparent = false; mat.opacity = 1 }
-          if (!mat.map && mat.color && mat.color.r < 0.02 && mat.color.g < 0.02 && mat.color.b < 0.02) {
-            mat.color = new THREE.Color('#bfbfbf')
-          }
-        } else {
-          // Assign a neutral material if missing
-          m.material = new THREE.MeshStandardMaterial({ color: '#bfbfbf' })
-        }
+    const loader = new GLTFLoader()
+    loader.load(
+      url,
+      (gltf) => {
+        if (!mounted) return
+        const cloned = gltf.scene.clone(true)
+        const { size } = prepareThumbScene(cloned)
+        const dist = Math.max(size.x, size.y, size.z) * 0.9 + 0.8
+        camera.position.set(0.9, 0.9, dist)
+        camera.lookAt(0, 0, 0)
+        camera.updateProjectionMatrix()
+        setScene(cloned)
+        invalidate()
+        onReady?.()
+      },
+      undefined,
+      () => {
+        if (!mounted) return
+        onError?.()
       }
-    })
+    )
 
-    const dist = Math.max(size.x, size.y, size.z) * 0.9 + 0.8
-    camera.position.set(0.9, 0.9, dist)
-    camera.lookAt(0, 0, 0)
-    camera.updateProjectionMatrix()
-    invalidate()
-  }, [cloned, camera, invalidate])
-  return <primitive object={cloned} />
+    return () => {
+      mounted = false
+    }
+  }, [url, camera, invalidate, onReady, onError])
+
+  if (scene) {
+    return <primitive object={scene} />
+  }
+
+  return (
+    <mesh>
+      <boxGeometry args={[1, 0.6, 0.05]} />
+      <meshStandardMaterial color="#2a2a2a" />
+    </mesh>
+  )
 }
 
 export default GLBThumb

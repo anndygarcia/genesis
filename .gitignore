@@ -26,3 +26,9 @@ home-designer/
 *.sw?
 .vercel
 .env*.local
+
+# Genesis pipeline runtime artifacts
+pipeline/_artifacts/
+pipeline/.venv/
+__pycache__/
+*.py[cod]

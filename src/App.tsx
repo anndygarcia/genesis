@@ -18,6 +18,9 @@ import ViewerTest from './pages/ViewerTest'
 import Homes from './pages/Homes'
 import ViewerUpload from './pages/ViewerUpload'
 import CreateStudio from './pages/CreateStudio'
+import IntakeForm from './pages/IntakeForm'
+import { ToastContainer } from './components/Toast'
+import PipelineStatus from './components/PipelineStatus'
 
 function LegacyViewerRedirect() {
   const location = useLocation()
@@ -67,6 +70,7 @@ function App() {
   const isProtectedPath = (pathname: string) => {
     const protectedPrefixes = [
       '/start',
+      '/intake',
       '/viewer-upload',
       '/viewer',
       '/viewer-test',
@@ -450,6 +454,19 @@ function App() {
               Create
             </NavLink>
             <NavLink
+              to="/intake"
+              onClick={(e) => {
+                if (!user) {
+                  e.preventDefault()
+                  promptLoginFor('/intake')
+                }
+              }}
+              className={({isActive}) => `hover:text-[#a588ef] ${isActive ? 'text-[#a588ef]' : 'text-neutral-200'}`}
+              title="Generate a full home from your intake using the Genesis pipeline"
+            >
+              Generate
+            </NavLink>
+            <NavLink
               to="/viewer-upload"
               onClick={(e) => {
                 if (!user) {
@@ -461,6 +478,7 @@ function App() {
             >
               Viewer
             </NavLink>
+            {user && <PipelineStatus />}
             {user ? (
               <div
                 className="relative"
@@ -641,6 +659,10 @@ function App() {
           <Route
             path="/start"
             element={<CreateStudio />}
+          />
+          <Route
+            path="/intake"
+            element={<IntakeForm />}
           />
           <Route path="/preview" element={<Preview />} />
           <Route path="/profile" element={<Profile />} />
@@ -905,6 +927,7 @@ function App() {
           {new Date().getFullYear()} Genesis AI. All rights reserved.
         </footer>
       )}
+      <ToastContainer />
     </div>
   )
 }

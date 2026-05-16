@@ -23,6 +23,12 @@
     "three-mesh-bvh": "^0.9.1",
     "three-stdlib": "^2.36.0"
   },
+  "browserslist": [
+    "last 2 Chrome versions",
+    "last 2 Firefox versions",
+    "last 2 Safari versions",
+    "last 2 Edge versions"
+  ],
   "devDependencies": {
     "@eslint/js": "^9.33.0",
     "@tailwindcss/postcss": "^4.1.12",

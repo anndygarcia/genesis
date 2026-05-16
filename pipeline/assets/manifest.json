@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "_comment": "Genesis asset catalog. Drop GLBs into pipeline/assets/library/ and add an entry per asset below. Path is resolved relative to this file unless absolute. Dimensions are [width, height, depth] in meters and should match the GLB's actual bounding box reasonably closely so the dimension-proximity scorer picks the right asset for each FurnitureItem. style_tags overlap with the architect's style vocabulary and the FastVLM style-cue agent's normalized archetype list (see pipeline/agents/style_refs.py KNOWN_ARCHETYPES). License is informational; the pipeline doesn't gate on it. Genesis ships with this manifest empty; the parametric furniture builder takes over for any FurnitureItem that doesn't match an asset.",
+  "assets": []
+}

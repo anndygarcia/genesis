@@ -630,9 +630,11 @@ textarea::placeholder {
   transform-origin: center;
   animation: rotate-edge-line 2.8s linear infinite;
   filter: blur(0.6px);
-  /* Mask to show only a thin border line */
-  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1px)) content-box;
-          mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1px)) content-box;
+  /* Mask to show only a thin border ring (content-box XOR border-box = 1px ring) */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0) border-box;
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0) border-box;
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
   padding: 1px; /* pairs with content-box for the mask */
   z-index: 1;
 }
@@ -669,4 +671,16 @@ textarea::placeholder {
 }
 @media (prefers-reduced-motion: reduce) {
   .btn-pulse::after { animation: none; }
+}
+
+/* Toast slide-in animation */
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(1rem) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
 }
